@@ -1,6 +1,7 @@
 #pragma once
 #include <src/cub_wraps.cuh>
 #include <src/kernels/kernel_3pass.cuh>
+#include <src/kernels/kernel_pattern.cuh>
 #include <src/kernels/kernel_streaming_add.cuh>
 #include "cuda_try.cuh"
 #include "utils.cuh"
@@ -63,14 +64,16 @@ struct intermediate_data {
     }
     template <typename T> void prepare_buffers(size_t element_count, size_t chunk_length, T* d_output, uint8_t* d_mask)
     {
-        // make sure unused bits in bitmask are 0
-        int unused_bits = overlap(element_count, 8);
-        if (unused_bits) {
-            uint8_t* last_mask_byte_ptr = d_mask + element_count / 8;
-            uint8_t last_mask_byte = gpu_to_val(last_mask_byte_ptr);
-            last_mask_byte >>= unused_bits;
-            last_mask_byte <<= unused_bits;
-            val_to_gpu(last_mask_byte_ptr, last_mask_byte);
+        if (d_mask) {
+            // make sure unused bits in bitmask are 0
+            int unused_bits = overlap(element_count, 8);
+            if (unused_bits) {
+                uint8_t* last_mask_byte_ptr = d_mask + element_count / 8;
+                uint8_t last_mask_byte = gpu_to_val(last_mask_byte_ptr);
+                last_mask_byte >>= unused_bits;
+                last_mask_byte <<= unused_bits;
+                val_to_gpu(last_mask_byte_ptr, last_mask_byte);
+            }
         }
         CUDA_TRY(cudaMemset(d_out_count, 0, (max_stream_count + 1) * sizeof(*d_out_count)));
         CUDA_TRY(cudaMemset(d_output, 0, element_count * sizeof(T)));
@@ -321,6 +324,26 @@ template <class T> float bench8_cub_flagged(intermediate_data* id, T* d_input, u
     // determine temporary device storage requirements
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
         cub::DeviceSelect::Flagged(id->d_cub_intermediate, id->cub_intermediate_size, d_input, bit, d_output, id->d_out_count, element_count);
+    });
+    return time;
+}
+
+template <class T>
+float bench9_pattern(
+    intermediate_data* id,
+    T* d_input,
+    uint32_t pattern,
+    int pattern_length,
+    T* d_output,
+    size_t element_count,
+    int block_size,
+    int grid_size)
+{
+    id->prepare_buffers(element_count, 0, d_output, NULL);
+    float time = 0;
+    // determine temporary device storage requirements
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+        launch_pattern_proc(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length);
     });
     return time;
 }

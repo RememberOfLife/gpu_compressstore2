@@ -1,7 +1,9 @@
+#include <__clang_cuda_device_functions.h>
 #include <bitset>
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
+#include <pthread.h>
 #include <stdio.h>
 #include <thread>
 #include <vector>
@@ -14,6 +16,7 @@
 #include "utils.cuh"
 #include "data_generator.cuh"
 #include "benchmarks.cuh"
+#include "kernels/data_generator.cuh"
 
 int main(int argc, char** argv)
 {
@@ -26,7 +29,7 @@ int main(int argc, char** argv)
     if (argc > 2) {
         csv_path = argv[2];
     }
-    int iterations = 100;
+    int iterations = 1;
     if (argc > 3) {
         iterations = atoi(argv[3]);
         if (iterations < 1) iterations = 1;
@@ -49,6 +52,15 @@ int main(int argc, char** argv)
     size_t one_count;
     auto pred = gen_predicate(
         col, +[](float f) { return f > 200; }, &one_count);
+    // mask from pattern instead
+    bool use_pattern_mask = true;
+    int pattern_length = 8;
+    uint32_t pattern = 0b10110010<<(32-pattern_length);
+    if (use_pattern_mask) {
+        one_count = 0;
+        generate_mask_pattern(&pred[0], 0, pred.size(), pattern, pattern_length, &one_count);
+    }
+    // put predicate mask on gpu
     uint8_t* d_mask = vector_to_gpu(pred);
 
     printf("line count: %zu, one count: %zu, percentage: %f\n", col.size(), one_count, (double)one_count / col.size());
@@ -83,6 +95,10 @@ int main(int argc, char** argv)
         return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
     });
     benchs.emplace_back("bench8_cub_flagged", [&]() { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
+
+    if (use_pattern_mask) {
+        benchs.emplace_back("bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 256, 1024); });
+    }
 
     // run benchmark
     std::vector<float> timings(benchs.size(), 0.0f);
