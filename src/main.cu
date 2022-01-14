@@ -82,8 +82,8 @@ int main(int argc, char** argv)
     });
     benchs.emplace_back(
         "bench3_3pass_streaming", [&]() { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024); });
-    benchs.emplace_back("bench4_optimized_read_non_skipping_cub_pss", [&]() {
-         return bench4_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
+    benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&]() {
+         return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
     });
     benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&]() {
         return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
     benchs.emplace_back("bench8_cub_flagged", [&]() { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
 
     if (use_pattern_mask) {
-        benchs.emplace_back("bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 256, 1024); });
+        benchs.emplace_back("bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, 2048, 64); });
     }
 
     // run benchmark

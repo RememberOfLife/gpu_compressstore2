@@ -237,7 +237,7 @@ float bench3_3pass_streaming(
 }
 
 template <class T>
-float bench4_optimized_read_non_skipping_cub_pss(
+float bench4_3pass_optimized_read_non_skipping_cub_pss(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
@@ -336,6 +336,7 @@ float bench9_pattern(
     int pattern_length,
     T* d_output,
     size_t element_count,
+    size_t chunk_length,
     int block_size,
     int grid_size)
 {
@@ -343,7 +344,7 @@ float bench9_pattern(
     float time = 0;
     // determine temporary device storage requirements
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
-        launch_pattern_proc(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length);
+        launch_pattern_proc(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
     });
     return time;
 }

@@ -7,16 +7,24 @@
 
 #include "cuda_time.cuh"
 #include "cuda_try.cuh"
+#include "utils.cuh"
 
 #define CUDA_WARP_SIZE 32
 template <typename T>
 __global__ void kernel_pattern_proc(
-    T* input, T* output, uint64_t N, uint32_t pattern, int pattern_length, uint32_t* thread_offset_initials, uint32_t* readin_offset_increments)
+    T* input,
+    T* output,
+    uint64_t N,
+    uint32_t pattern,
+    int pattern_length,
+    uint32_t* thread_offset_initials,
+    uint32_t* readin_offset_increments,
+    uint32_t patterns_per_chunk)
 {
-    // pattern kernel
-    // adapt 1024bit writeout loop for proper gridstride and only always use the pattern as mask
-    // since the pattern is known at launch, make sure that there are always 32 threads alive at writeout time
-    // pattern skip lookup is computed on cpu side
+    // algo:
+    // every warp processes a chunk of length (pattern_length * patterns_per_chunk) of the input together
+    // every chunk starts at a clean boundary between patterns, every threads starts readin at its offset_initial
+    // after every write a thread increments its readin offset by the offset_increment of the one bit at that position in the pattern
     uint32_t warp_offset = threadIdx.x % CUDA_WARP_SIZE;
     uint32_t warp_index = threadIdx.x / CUDA_WARP_SIZE;
     uint8_t pattern_popc = __popc(pattern);
@@ -27,17 +35,19 @@ __global__ void kernel_pattern_proc(
         smem_readin_offset_increments[warp_offset] = readin_offset_increments[warp_offset];
     }
     __syncthreads();
-    // loop through 1024bit blocks
-    uint32_t chunklength = 1024;
-    uint32_t chunk_id = warp_index + blockIdx.x * blockDim.x / CUDA_WARP_SIZE;
-    uint32_t chunk_stride = gridDim.x * blockDim.x / CUDA_WARP_SIZE;
-    for (; chunk_id < N / chunklength; chunk_id += chunk_stride) {
-        // determine base offset using popc per pattern and number of patterns before this chunk
-        uint64_t base_offset = pattern_popc * chunk_id * (chunklength / pattern_length);
-        uint32_t thread_offset = smem_thread_offset_initials[warp_offset];
-        uint32_t in_chunk_step = 0;
-        while (thread_offset < chunklength) {
-            output[base_offset + warp_offset + CUDA_WARP_SIZE * in_chunk_step++] = input[base_offset + thread_offset];
+    // loop through chunks
+    uint64_t chunk_length = pattern_length * patterns_per_chunk;
+    uint64_t chunk_idx = warp_index + blockIdx.x * (blockDim.x / CUDA_WARP_SIZE);
+    uint64_t chunk_stride = gridDim.x * (blockDim.x / CUDA_WARP_SIZE);
+    for (; chunk_idx < ceil2mult(N, chunk_length); chunk_idx += chunk_stride) {
+        // determine base writout offset of this chunk using number of patterns before this chunk
+        uint64_t base_offset_readin = pattern_length * chunk_idx * patterns_per_chunk; // pattern_len for input offset
+        uint64_t base_offset_writeout = pattern_popc * chunk_idx * patterns_per_chunk; // pattern_popc for output offset
+        uint64_t thread_offset = smem_thread_offset_initials[warp_offset];
+        uint64_t in_chunk_step = 0;
+        //if (chunk_idx < 20) printf("N %lu; id %lu; in %lu; out %lu\n", N, chunk_idx, base_offset_readin, base_offset_writeout);
+        while ((thread_offset < chunk_length) && (base_offset_readin + thread_offset < N)) {
+            output[base_offset_writeout + warp_offset + CUDA_WARP_SIZE * in_chunk_step++] = input[base_offset_readin + thread_offset];
             thread_offset += smem_readin_offset_increments[thread_offset % pattern_length];
         }
         __syncwarp();
@@ -58,7 +68,8 @@ float launch_pattern_proc(
     T* d_output,
     uint64_t N,
     uint32_t pattern,
-    int pattern_length)
+    int pattern_length,
+    uint32_t chunk_length)
 {
     float time = 0;
     if (blockcount == 0) {
@@ -83,24 +94,25 @@ float launch_pattern_proc(
         }
     }
     // print for checks
-    for (int i = 0; i < 32; i++) {
-        std::cout << "[" << i << "] = " << thread_offset_initials[i];
-        if (readin_offset_increments[i] > 0) {
-            std::cout << " + " << readin_offset_increments[i];
-        }
-        std::cout << "\n";
-    }
+    // for (int i = 0; i < 32; i++) {
+    //     std::cout << "[" << i << "] = " << thread_offset_initials[i];
+    //     if (readin_offset_increments[i] > 0) {
+    //         std::cout << " + " << readin_offset_increments[i];
+    //     }
+    //     std::cout << "\n";
+    // }
+    // calculate chunk length as multiple of pattern length, such that every chunk processed by a warp writes out at least 1024 one bits
+    uint32_t patterns_per_chunk = ceildiv(chunk_length, pattern_popc);
     // copy const arrays to device
     uint32_t* d_thread_offset_initials;
     uint32_t* d_readin_offset_increments;
     CUDA_TRY(cudaMalloc(&d_thread_offset_initials, sizeof(uint32_t) * 32));
     CUDA_TRY(cudaMalloc(&d_readin_offset_increments, sizeof(uint32_t) * 32));
     CUDA_TRY(cudaMemcpy(d_thread_offset_initials, thread_offset_initials, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
-    CUDA_TRY(cudaMemcpy(d_readin_offset_increments, d_readin_offset_increments, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
+    CUDA_TRY(cudaMemcpy(d_readin_offset_increments, readin_offset_increments, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
     CUDA_TIME(
         ce_start, ce_stop, 0, &time,
-        (kernel_pattern_proc<T>
-         <<<blockcount, threadcount>>>(d_input, d_output, N, pattern, pattern_length, d_thread_offset_initials, d_readin_offset_increments)));
+        (kernel_pattern_proc<T><<<blockcount, threadcount>>>(d_input, d_output, N, pattern, pattern_length, d_thread_offset_initials, d_readin_offset_increments, patterns_per_chunk)));
     CUDA_TRY(cudaFree(d_readin_offset_increments));
     CUDA_TRY(cudaFree(d_thread_offset_initials));
     return time;
