@@ -1,3 +1,4 @@
+#include <__clang_cuda_device_functions.h>
 #include <bitset>
 #include <cstdlib>
 #include <cstdint>
@@ -5,6 +6,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <thread>
+#include "data_generator.cuh"
 #include <vector>
 
 #define DISABLE_CUDA_TIME
@@ -24,9 +26,13 @@ int main(int argc, char** argv)
         printf("setting device numer to %i\n", device);
         CUDA_TRY(cudaSetDevice(device));
     }
+    int lines = 0;
     const char* csv_path = "../res/Arade_1.csv";
     if (argc > 2) {
-        csv_path = argv[2];
+        lines = atoi(argv[2]);
+        if (lines == 0) {
+            csv_path = argv[2];
+        }
     }
     int iterations = 100;
     if (argc > 3) {
@@ -42,13 +48,19 @@ int main(int argc, char** argv)
     // load data
     std::vector<float> col;
     printf("parsing %s\n", csv_path);
-    load_csv(csv_path, {3}, col);
-
+    if (lines != 0) {
+        col.resize(lines);
+        generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
+    }
+    else {
+        load_csv(csv_path, {3}, col);
+    }
     float* d_input = vector_to_gpu(col);
     float* d_output = alloc_gpu<float>(col.size() + 1);
 
     // gen predicate mask
     size_t one_count;
+
     auto pred = gen_predicate(
         col, +[](float f) { return f > 200; }, &one_count);
     // mask from pattern instead
