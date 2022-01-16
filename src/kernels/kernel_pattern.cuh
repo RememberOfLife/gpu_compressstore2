@@ -30,11 +30,13 @@ __global__ void kernel_pattern_proc(
     uint8_t pattern_popc = __popc(pattern);
     __shared__ uint32_t smem_thread_offset_initials[32];
     __shared__ uint32_t smem_readin_offset_increments[32];
-    __shared__ uint32_t smem_readin_offset_wrapped[32];
+    __shared__ uint8_t smem_readin_offset_wrapped[32];
     if (warp_index == 0) {
-        smem_thread_offset_initials[warp_offset] = thread_offset_initials[warp_offset];
-        smem_readin_offset_increments[warp_offset] = readin_offset_increments[warp_offset];
-        smem_readin_offset_wrapped[warp_offset] = (smem_thread_offset_initials[warp_offset] + smem_readin_offset_increments[warp_offset]) % pattern_length;
+        uint32_t toi = thread_offset_initials[warp_offset];
+        smem_thread_offset_initials[warp_offset] = toi;
+        uint32_t roi = readin_offset_increments[warp_offset];
+        smem_readin_offset_increments[warp_offset] = roi;
+        smem_readin_offset_wrapped[warp_offset] = (toi + roi) % pattern_length;
     }
     __syncthreads();
     // loop through chunks
@@ -89,13 +91,14 @@ float launch_pattern_proc(
     // calculate for every 1 bit the start of the next pattern block extended to 32 threads
     // determine thread based table entry for writeout offset increment
     int pattern_popc = std::popcount(pattern);
-    for (int one_count = 0, thread_offset = 0; one_count < 32+pattern_popc; thread_offset++) {
-        if ((pattern >> (31-((thread_offset) % pattern_length))) & 0b1) {
+    for (int one_count = 0, thread_offset = 0; one_count < 32 + pattern_popc; thread_offset++) {
+        if ((pattern >> (31 - ((thread_offset) % pattern_length))) & 0b1) {
             if (one_count < 32) {
                 thread_offset_initials[one_count] = thread_offset;
                 readin_offset_increments[one_count] = 0;
-            } else {
-                int in_pattern_offset = thread_offset_initials[one_count-32];
+            }
+            else {
+                int in_pattern_offset = thread_offset_initials[one_count - 32];
                 readin_offset_increments[in_pattern_offset] = thread_offset - in_pattern_offset;
             }
             one_count++;
@@ -120,7 +123,8 @@ float launch_pattern_proc(
     CUDA_TRY(cudaMemcpy(d_readin_offset_increments, readin_offset_increments, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
     CUDA_TIME_FORCE_ENABLED(
         ce_start, ce_stop, 0, &time,
-        (kernel_pattern_proc<T><<<blockcount, threadcount>>>(d_input, d_output, N, pattern, pattern_length, d_thread_offset_initials, d_readin_offset_increments, patterns_per_chunk)));
+        (kernel_pattern_proc<T><<<blockcount, threadcount>>>(
+            d_input, d_output, N, pattern, pattern_length, d_thread_offset_initials, d_readin_offset_increments, patterns_per_chunk)));
     CUDA_TRY(cudaFree(d_readin_offset_increments));
     CUDA_TRY(cudaFree(d_thread_offset_initials));
     return time;
