@@ -46,8 +46,9 @@ __global__ void kernel_pattern_proc(
         uint64_t base_offset_writeout = pattern_popc * chunk_idx * patterns_per_chunk; // pattern_popc for output offset
         uint64_t thread_offset = smem_thread_offset_initials[warp_offset];
         uint64_t in_chunk_step = warp_offset;
-        //if (chunk_idx < 20) printf("N %lu; id %lu; in %lu; out %lu\n", N, chunk_idx, base_offset_readin, base_offset_writeout);
-        while ((thread_offset < chunk_length) && (base_offset_readin + thread_offset < N)) {
+        uint64_t chunk_end = chunk_length;
+        if (base_offset_readin + chunk_length > N) chunk_end = N - base_offset_readin;
+        while (thread_offset < chunk_end) {
             T in_data = input[base_offset_readin + thread_offset];
             output[base_offset_writeout + in_chunk_step] = in_data;
             thread_offset += smem_readin_offset_increments[thread_offset % pattern_length];
