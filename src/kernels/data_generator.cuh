@@ -128,9 +128,15 @@ __global__ void kernel_check_validation(T* d_validation, T* d_data, uint64_t cou
     uint64_t failures = 0;
 
     for (uint64_t i = tid; i < count; i += gridstride) {
-        if (d_validation[i] != d_data[i]) {
-            if (report_failures) printf("failure: index: %lu: expected: %f, got: %f\n", i, d_validation[i], d_data[i]);
-            failures++;
+        char d[sizeof(T)], v[sizeof(T)];
+        memcpy(&d, (void*)&d_data[i], sizeof(T));
+        memcpy(&v, (void*)&d_validation[i], sizeof(T));
+        for (int j = 0; j < sizeof(T); j++) {
+            if (d[j] != v[j]) {
+                if (report_failures) printf("failure: index: %lu: expected: %f, got: %f\n", i, d_validation[i], d_data[i]);
+                failures++;
+                break;
+            }
         }
     }
     if (d_failure_count) {
