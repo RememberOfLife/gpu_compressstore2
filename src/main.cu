@@ -21,38 +21,45 @@
 
 int main(int argc, char** argv)
 {
+    int lines = 0;
+    const char* csv_path = "../res/Arade_1.csv";
+    int iterations = 100;
+    bool report_failures = false;
+
+    bool use_pattern_mask = true;
+    int pattern_length = 8;
+    uint32_t pattern = 0b10110010 << (32 - pattern_length);
+    // 'parse' args
     if (argc > 1) {
         int device = atoi(argv[1]);
         printf("setting device numer to %i\n", device);
         CUDA_TRY(cudaSetDevice(device));
     }
-    int lines = 0;
-    const char* csv_path = "../res/Arade_1.csv";
     if (argc > 2) {
         lines = atoi(argv[2]);
         if (lines == 0) {
             csv_path = argv[2];
         }
     }
-    int iterations = 100;
     if (argc > 3) {
         iterations = atoi(argv[3]);
         if (iterations < 1) iterations = 1;
         printf("setting iterations numer to %i\n", iterations);
     }
-    bool report_failures = false;
+
     if (argc > 4) {
         printf("will report failures %i\n", iterations);
         report_failures = true;
     }
     // load data
     std::vector<float> col;
-    printf("parsing %s\n", csv_path);
     if (lines != 0) {
+        printf("generating %i lines of input\n", lines);
         col.resize(lines);
         generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
     }
     else {
+        printf("parsing %s\n", csv_path);
         load_csv(csv_path, {3}, col);
     }
     float* d_input = vector_to_gpu(col);
@@ -60,13 +67,16 @@ int main(int argc, char** argv)
 
     // gen predicate mask
     size_t one_count;
-
-    auto pred = gen_predicate(
-        col, +[](float f) { return f > 200; }, &one_count);
+    std::vector<uint8_t> pred;
+    if (!use_pattern_mask) {
+        gen_predicate(
+            col, +[](float f) { return f > 200; }, &one_count);
+    }
+    else {
+        pred.resize(ceildiv(col.size(), 8));
+    }
     // mask from pattern instead
-    bool use_pattern_mask = true;
-    int pattern_length = 8;
-    uint32_t pattern = 0b10110010 << (32 - pattern_length);
+
     if (use_pattern_mask) {
         one_count = 0;
         generate_mask_pattern(&pred[0], 0, pred.size(), pattern, pattern_length, &one_count);
@@ -81,6 +91,8 @@ int main(int argc, char** argv)
     validation.resize(col.size());
     size_t out_length = generate_validation(&col[0], &pred[0], &validation[0], col.size());
     float* d_validation = vector_to_gpu(validation);
+
+    puts("starting benchmark");
 
     // prepare candidates for benchmark
     intermediate_data id{col.size(), 1024, 8}; // setup shared intermediate data
