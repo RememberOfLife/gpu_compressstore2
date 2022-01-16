@@ -345,10 +345,10 @@ float bench9_pattern(
     id->prepare_buffers(element_count, 0, d_output, NULL);
     float time = 0;
     // determine temporary device storage requirements
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
-        launch_pattern_proc(
-            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
-    });
+    // CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    return launch_pattern_proc(
+        id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
+    // });
     return time;
 }
 

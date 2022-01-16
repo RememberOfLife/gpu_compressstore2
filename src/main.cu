@@ -29,7 +29,7 @@ int main(int argc, char** argv)
     if (argc > 2) {
         csv_path = argv[2];
     }
-    int iterations = 1;
+    int iterations = 100;
     if (argc > 3) {
         iterations = atoi(argv[3]);
         if (iterations < 1) iterations = 1;
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 
     if (use_pattern_mask) {
         benchs.emplace_back(
-            "bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, 1024, 64); });
+            "bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, 256, 1024); });
     }
 
     // run benchmark

@@ -37,18 +37,21 @@ __global__ void kernel_pattern_proc(
     __syncthreads();
     // loop through chunks
     uint64_t chunk_length = pattern_length * patterns_per_chunk;
+    uint64_t chunk_count = ceil2mult(N, chunk_length) / chunk_length;
     uint64_t chunk_idx = warp_index + blockIdx.x * (blockDim.x / CUDA_WARP_SIZE);
     uint64_t chunk_stride = gridDim.x * (blockDim.x / CUDA_WARP_SIZE);
-    for (; chunk_idx < ceil2mult(N, chunk_length); chunk_idx += chunk_stride) {
+    for (; chunk_idx < chunk_count; chunk_idx += chunk_stride) {
         // determine base writout offset of this chunk using number of patterns before this chunk
         uint64_t base_offset_readin = pattern_length * chunk_idx * patterns_per_chunk; // pattern_len for input offset
         uint64_t base_offset_writeout = pattern_popc * chunk_idx * patterns_per_chunk; // pattern_popc for output offset
         uint64_t thread_offset = smem_thread_offset_initials[warp_offset];
-        uint64_t in_chunk_step = 0;
+        uint64_t in_chunk_step = warp_offset;
         //if (chunk_idx < 20) printf("N %lu; id %lu; in %lu; out %lu\n", N, chunk_idx, base_offset_readin, base_offset_writeout);
         while ((thread_offset < chunk_length) && (base_offset_readin + thread_offset < N)) {
-            output[base_offset_writeout + warp_offset + CUDA_WARP_SIZE * in_chunk_step++] = input[base_offset_readin + thread_offset];
+            T in_data = input[base_offset_readin + thread_offset];
+            output[base_offset_writeout + in_chunk_step] = in_data;
             thread_offset += smem_readin_offset_increments[thread_offset % pattern_length];
+            in_chunk_step += CUDA_WARP_SIZE;
         }
         __syncwarp();
     }
@@ -110,7 +113,7 @@ float launch_pattern_proc(
     CUDA_TRY(cudaMalloc(&d_readin_offset_increments, sizeof(uint32_t) * 32));
     CUDA_TRY(cudaMemcpy(d_thread_offset_initials, thread_offset_initials, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
     CUDA_TRY(cudaMemcpy(d_readin_offset_increments, readin_offset_increments, sizeof(uint32_t) * 32, cudaMemcpyHostToDevice));
-    CUDA_TIME(
+    CUDA_TIME_FORCE_ENABLED(
         ce_start, ce_stop, 0, &time,
         (kernel_pattern_proc<T><<<blockcount, threadcount>>>(d_input, d_output, N, pattern, pattern_length, d_thread_offset_initials, d_readin_offset_increments, patterns_per_chunk)));
     CUDA_TRY(cudaFree(d_readin_offset_increments));
