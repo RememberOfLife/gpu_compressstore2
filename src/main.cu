@@ -85,12 +85,24 @@ int main(int argc, char** argv)
             } break;
         }
     }
-    generate_mask_uniform((uint8_t*)&pattern, 0, 4, selectivity);
-    pattern = pattern << (32 - pattern_length);
-    std::bitset<32> pattern_bitset(pattern); // load data
-    std::stringstream ss;
-    ss << pattern_bitset;
-    std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
+    if (use_pattern_mask) {
+        int pattern_one_count = pattern_length * selectivity;
+        fast_prng rng(42);
+        pattern = 0;
+        while (pattern_one_count > 0) {
+            int i = rng.rand() % pattern_length;
+            if (((pattern >> (31 - i)) & 0x1) == 0) {
+                pattern_one_count--;
+                pattern |= 1 << (31 - i);
+            }
+        }
+        // generate_mask_uniform((uint8_t*)&pattern, 0, 4, selectivity);
+        // pattern = pattern << (32 - pattern_length);
+        std::bitset<32> pattern_bitset(pattern); // load data
+        std::stringstream ss;
+        ss << pattern_bitset;
+        std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
+    }
     std::vector<float> col;
     if (lines != 0) {
         printf("generating %i lines of input\n", lines);
