@@ -18,7 +18,13 @@
 #include "data_generator.cuh"
 #include "benchmarks.cuh"
 #include "kernels/data_generator.cuh"
+#include <unistd.h>
 
+static float threshold = 200;
+bool predicate_function(float f)
+{
+    return f > threshold;
+}
 int main(int argc, char** argv)
 {
     int lines = 0;
@@ -28,30 +34,63 @@ int main(int argc, char** argv)
 
     bool use_pattern_mask = true;
     int pattern_length = 8;
-    uint32_t pattern = 0b10110010 << (32 - pattern_length);
-    // 'parse' args
-    if (argc > 1) {
-        int device = atoi(argv[1]);
-        printf("setting device numer to %i\n", device);
-        CUDA_TRY(cudaSetDevice(device));
-    }
-    if (argc > 2) {
-        lines = atoi(argv[2]);
-        if (lines == 0) {
-            csv_path = argv[2];
+    uint32_t pattern;
+    float selectivity = 0.5;
+    bool use_selectivity = true;
+    int option;
+    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:r")) != -1) {
+        switch (option) {
+            case 'd': {
+                int device = atoi(optarg);
+                printf("setting device numer to %i\n", device);
+                CUDA_TRY(cudaSetDevice(device));
+            } break;
+            case 'l': {
+                lines = atoi(optarg);
+                printf("setting line count to %i\n", lines);
+            } break;
+            case 'i': {
+                iterations = atoi(optarg);
+                printf("setting iteration count to %i\n", iterations);
+            } break;
+            case 'r': {
+                printf("will report failures\n");
+                report_failures = true;
+            } break;
+            case 'f': {
+                csv_path = optarg;
+                lines = 0;
+            } break;
+            case 'p': {
+                pattern_length = atoi(optarg);
+                if (pattern_length > 32 || pattern_length < 1) pattern_length = 8;
+                printf("setting pattern length to %i\n", pattern_length);
+                use_pattern_mask = true;
+            } break;
+            case 's': {
+                selectivity = atof(optarg);
+                printf("setting selectivity to %f\n", selectivity);
+            } break;
+            case 't': {
+                threshold = atof(optarg);
+                printf("setting value threshold to%f\n", threshold);
+                use_pattern_mask = false;
+                use_selectivity = false;
+            } break;
+            case ':': {
+                printf("-%c needs a value\n", optopt);
+            } break;
+            case '?': { // used for some unknown options
+                printf("unknown option: %c\n", optopt);
+            } break;
         }
     }
-    if (argc > 3) {
-        iterations = atoi(argv[3]);
-        if (iterations < 1) iterations = 1;
-        printf("setting iterations numer to %i\n", iterations);
-    }
-
-    if (argc > 4) {
-        printf("will report failures %i\n", iterations);
-        report_failures = true;
-    }
-    // load data
+    generate_mask_uniform((uint8_t*)&pattern, 0, 4, selectivity);
+    pattern = pattern << (32 - pattern_length);
+    std::bitset<32> pattern_bitset(pattern); // load data
+    std::stringstream ss;
+    ss << pattern_bitset;
+    std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
     std::vector<float> col;
     if (lines != 0) {
         printf("generating %i lines of input\n", lines);
@@ -68,19 +107,22 @@ int main(int argc, char** argv)
     // gen predicate mask
     size_t one_count;
     std::vector<uint8_t> pred;
-    if (!use_pattern_mask) {
-        gen_predicate(
-            col, +[](float f) { return f > 200; }, &one_count);
+    if (!use_pattern_mask && !use_selectivity) {
+        pred = gen_predicate(col, predicate_function, &one_count);
     }
     else {
         pred.resize(ceildiv(col.size(), 8));
-    }
-    // mask from pattern instead
-
-    if (use_pattern_mask) {
+        // mask from pattern instead
         one_count = 0;
         generate_mask_pattern(&pred[0], 0, pred.size(), pattern, pattern_length, &one_count);
+        // make sure unused bits in bitmask are 0
+        int unused_bits = overlap(col.size(), 8);
+        if (unused_bits) {
+            pred.back() >>= unused_bits;
+            pred.back() <<= unused_bits;
+        }
     }
+
     // put predicate mask on gpu
     uint8_t* d_mask = vector_to_gpu(pred);
 
