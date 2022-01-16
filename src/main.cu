@@ -1,4 +1,3 @@
-#include <__clang_cuda_device_functions.h>
 #include <bitset>
 #include <cstdlib>
 #include <cstdint>
