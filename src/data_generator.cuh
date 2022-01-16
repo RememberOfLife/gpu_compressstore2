@@ -101,12 +101,13 @@ void generate_mask_offset(uint8_t* h_buffer, uint64_t offset, uint64_t length, i
 // length: how many bytes to generate
 // pattern: bit pattern to be repeated, starting at most significant bit
 // pattern_length: how many of the bits of the given 32-bit pattern are actually used in the pattern
-void generate_mask_pattern(uint8_t* h_buffer, uint64_t offset, uint64_t length, uint32_t pattern = 0, uint32_t pattern_length = 0, size_t* out_count = NULL)
+void generate_mask_pattern(
+    uint8_t* h_buffer, uint64_t offset, uint64_t length, uint32_t pattern = 0, uint32_t pattern_length = 0, size_t* out_count = NULL)
 {
     for (uint64_t i = offset; i < offset + length; i++) {
         uint8_t acc = 0;
         for (int j = 7; j >= 0; j--) {
-            if ((pattern >> (31-((i * 8 + (7-j)) % pattern_length))) & 0b1) {
+            if ((pattern >> (31 - ((i * 8 + (7 - j)) % pattern_length))) & 0b1) {
                 acc |= (1 << j);
                 if (out_count) {
                     (*out_count)++;

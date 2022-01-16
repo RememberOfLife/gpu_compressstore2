@@ -111,7 +111,7 @@ __global__ void kernel_generate_mask_pattern(uint8_t* d_buffer, uint64_t count, 
     for (uint64_t i = tid; i < count; i += gridstride) {
         uint8_t acc = 0;
         for (int j = 7; j >= 0; j--) {
-            if ((pattern >> (31-((i * 8 + (7-j)) % pattern_length))) & 0b1) {
+            if ((pattern >> (31 - ((i * 8 + (7 - j)) % pattern_length))) & 0b1) {
                 acc |= (1 << j);
             }
         }

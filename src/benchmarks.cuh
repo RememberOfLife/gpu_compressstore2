@@ -114,7 +114,8 @@ float bench1_base_variant(
         launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
         launch_3pass_proc_none(
-            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length, element_count);
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
+            element_count);
     });
     return time;
 }
@@ -131,7 +132,8 @@ float bench2_base_variant_skipping(
         launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
         launch_3pass_proc_none(
-            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_pss, chunk_length, element_count);
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_pss, chunk_length,
+            element_count);
     });
     return time;
 }
@@ -344,7 +346,8 @@ float bench9_pattern(
     float time = 0;
     // determine temporary device storage requirements
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
-        launch_pattern_proc(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
+        launch_pattern_proc(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
     });
     return time;
 }
