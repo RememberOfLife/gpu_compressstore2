@@ -30,9 +30,11 @@ __global__ void kernel_pattern_proc(
     uint8_t pattern_popc = __popc(pattern);
     __shared__ uint32_t smem_thread_offset_initials[32];
     __shared__ uint32_t smem_readin_offset_increments[32];
+    __shared__ uint32_t smem_readin_offset_wrapped[32];
     if (warp_index == 0) {
         smem_thread_offset_initials[warp_offset] = thread_offset_initials[warp_offset];
         smem_readin_offset_increments[warp_offset] = readin_offset_increments[warp_offset];
+        smem_readin_offset_wrapped[warp_offset] = (smem_thread_offset_initials[warp_offset] + smem_readin_offset_increments[warp_offset]) % pattern_length;
     }
     __syncthreads();
     // loop through chunks
@@ -48,10 +50,12 @@ __global__ void kernel_pattern_proc(
         uint64_t in_chunk_step = warp_offset;
         uint64_t chunk_end = chunk_length;
         if (base_offset_readin + chunk_length > N) chunk_end = N - base_offset_readin;
+        int8_t pattern_pos = thread_offset % pattern_length;
         while (thread_offset < chunk_end) {
             T in_data = input[base_offset_readin + thread_offset];
             output[base_offset_writeout + in_chunk_step] = in_data;
-            thread_offset += smem_readin_offset_increments[thread_offset % pattern_length];
+            thread_offset += smem_readin_offset_increments[pattern_pos];
+            pattern_pos = smem_readin_offset_wrapped[pattern_pos];
             in_chunk_step += CUDA_WARP_SIZE;
         }
         __syncwarp();
