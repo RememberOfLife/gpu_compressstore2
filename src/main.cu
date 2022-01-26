@@ -36,8 +36,9 @@ int main(int argc, char** argv)
     uint32_t pattern;
     float selectivity = 0.5;
     bool use_selectivity = true;
+    bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:r")) != -1) {
+    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:r:z")) != -1) {
         switch (option) {
             case 'd': {
                 int device = atoi(optarg);
@@ -76,6 +77,10 @@ int main(int argc, char** argv)
                 use_pattern_mask = false;
                 use_selectivity = false;
             } break;
+            case 'z': {
+                printf("using zipf mask\n");
+                use_zipf = true;
+            } break;
             case ':': {
                 printf("-%c needs a value\n", optopt);
             } break;
@@ -106,7 +111,11 @@ int main(int argc, char** argv)
     if (lines != 0) {
         printf("generating %i lines of input\n", lines);
         col.resize(lines);
-        generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
+        if (use_zipf) {
+            generate_mask_zipf((uint8_t*)&col[0], lines * 4, 0, lines * 4);
+        } else {
+            generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
+        }
     }
     else {
         printf("parsing %s\n", csv_path);
