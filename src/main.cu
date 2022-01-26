@@ -186,7 +186,7 @@ int main(int argc, char** argv)
     size_t out_length = generate_validation(&col[0], &pred[0], &validation[0], col.size());
     float* d_validation = vector_to_gpu(validation);
 
-    puts("starting benchmark");
+    fprintf(stderr, "starting benchmark");
 
     // prepare candidates for benchmark
     intermediate_data id{col.size(), 1024, 8}; // setup shared intermediate data
