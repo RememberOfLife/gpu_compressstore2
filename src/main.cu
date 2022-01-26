@@ -32,6 +32,7 @@ int main(int argc, char** argv)
     int iterations = 100;
     bool report_failures = false;
 
+    int grid_size_max = 2048;
     bool use_csv = false;
     bool use_pattern_mask = true;
     int pattern_length = 8;
@@ -40,23 +41,27 @@ int main(int argc, char** argv)
     bool use_uniform = false;
     bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu")) != -1) {
+    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu:g")) != -1) {
         switch (option) {
+            case 'g': {
+                int grid_size_max = atoi(optarg);
+                fprintf(stderr, "using max grid size %i\n", grid_size_max);
+            } break;
             case 'd': {
                 int device = atoi(optarg);
-                printf("setting device numer to %i\n", device);
+                fprintf(stderr, "setting device numer to %i\n", device);
                 CUDA_TRY(cudaSetDevice(device));
             } break;
             case 'l': {
                 lines = atoi(optarg);
-                printf("setting line count to %i\n", lines);
+                fprintf(stderr, "setting line count to %i\n", lines);
             } break;
             case 'i': {
                 iterations = atoi(optarg);
-                printf("setting iteration count to %i\n", iterations);
+                fprintf(stderr, "setting iteration count to %i\n", iterations);
             } break;
             case 'r': {
-                printf("will report failures\n");
+                fprintf(stderr, "will report failures\n");
                 report_failures = true;
             } break;
             case 'f': {
@@ -66,31 +71,31 @@ int main(int argc, char** argv)
             case 'p': {
                 pattern_length = atoi(optarg);
                 if (pattern_length > 32 || pattern_length < 1) pattern_length = 8;
-                printf("setting pattern length to %i\n", pattern_length);
+                fprintf(stderr, "setting pattern length to %i\n", pattern_length);
             } break;
             case 's': {
                 selectivity = atof(optarg);
-                printf("setting selectivity to %f\n", selectivity);
+                fprintf(stderr, "setting selectivity to %f\n", selectivity);
             } break;
             case 't': {
                 threshold = atof(optarg);
-                printf("setting value threshold to%f\n", threshold);
+                fprintf(stderr, "setting value threshold to%f\n", threshold);
                 use_csv = true;
             } break;
             case 'z': {
-                printf("using zipf mask\n");
+                fprintf(stderr, "using zipf mask\n");
                 use_zipf = true;
             } break;
             case 'u': {
-                printf("using uniform mask\n");
+                fprintf(stderr, "using uniform mask\n");
                 use_uniform = true;
             } break;
             case ':': {
-                printf("-%c needs a value\n", optopt);
+                fprintf(stderr, "-%c needs a value\n", optopt);
                 exit(-1);
             } break;
             case '?': { // used for some unknown options
-                printf("unknown option: %c\n", optopt);
+                fprintf(stderr, "unknown option: %c\n", optopt);
                 exit(-1);
             } break;
         }
@@ -121,12 +126,12 @@ int main(int argc, char** argv)
     }
     std::vector<float> col;
     if (!use_csv) {
-        printf("generating %i lines of input\n", lines);
+        fprintf(stderr, "generating %i lines of input\n", lines);
         col.resize(lines);
         generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
     }
     else {
-        printf("parsing %s\n", csv_path);
+        fprintf(stderr, "parsing %s\n", csv_path);
         load_csv(csv_path, {3}, col);
         if (lines > 0) {
             col.resize(std::min(col.size(), static_cast<size_t>(lines)));
@@ -164,7 +169,7 @@ int main(int argc, char** argv)
     // put predicate mask on gpu
     uint8_t* d_mask = vector_to_gpu(pred);
 
-    printf("line count: %zu, one count: %zu, percentage: %f\n", col.size(), one_count, (double)one_count / col.size());
+    fprintf(stderr, "line count: %zu, one count: %zu, percentage: %f\n", col.size(), one_count, (double)one_count / col.size());
 
     // gen cpu side validation
     std::vector<float> validation;
@@ -182,8 +187,8 @@ int main(int argc, char** argv)
     benchs.emplace_back("bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
     benchs.emplace_back(
         "bench2_base_variant_skipping", [&](int bs, int gs) { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
-    benchs.emplace_back(
-        "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    // benchs.emplace_back(
+    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
     benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
         return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
     });
@@ -203,8 +208,9 @@ int main(int argc, char** argv)
             "bench9_pattern", [&](int bs, int gs) { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, bs, gs); });
     }
 
+    std::cout << "benchmark;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
     // run benchmark
-    for (int grid_size = 32; grid_size <= 2048; grid_size *= 2) {
+    for (int grid_size = 32; grid_size <= grid_size_max; grid_size *= 2) {
         for (int block_size = 32; block_size <= 1024; block_size *= 2) {
             std::vector<timings> timings(benchs.size());
             for (int it = 0; it < iterations; it++) {

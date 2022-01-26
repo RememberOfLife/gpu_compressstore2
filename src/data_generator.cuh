@@ -2,6 +2,7 @@
 #define DATA_GENERATOR_CUH
 
 #include <cstdint>
+#include <stdio.h>
 
 #include "fast_prng.cuh"
 
