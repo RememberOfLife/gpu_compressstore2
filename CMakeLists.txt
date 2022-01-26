@@ -70,3 +70,5 @@ set_property(TARGET gpu_compressstore2 PROPERTY CUDA_ARCHITECTURES 75 61)
 target_include_directories(gpu_compressstore2 PRIVATE ${INCLUDES})
 target_include_directories(gpu_compressstore2 BEFORE PRIVATE ${PREFIX_INCLUDES})
 add_dependencies(gpu_compressstore2 cub_fix)
+
+set_target_properties(gpu_compressstore2 PROPERTIES EXPORT_COMPILE_COMMANDS true)

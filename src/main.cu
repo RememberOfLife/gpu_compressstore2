@@ -151,46 +151,50 @@ int main(int argc, char** argv)
     // prepare candidates for benchmark
     intermediate_data id{col.size(), 1024, 8}; // setup shared intermediate data
 
-    std::vector<std::pair<std::string, std::function<float()>>> benchs;
+    std::vector<std::pair<std::string, std::function<timings(int, int)>>> benchs;
 
-    benchs.emplace_back("bench1_base_variant", [&]() { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024); });
-    benchs.emplace_back(
-        "bench2_base_variant_skipping", [&]() { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024); });
-    benchs.emplace_back(
-        "bench3_3pass_streaming", [&]() { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024); });
-    benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&]() {
-        return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
-    });
-    benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&]() {
-        return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
-    });
-    benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&]() {
-        return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
-    });
-    benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&]() {
-        return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, 256, 1024);
-    });
-    benchs.emplace_back("bench8_cub_flagged", [&]() { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
+    // benchs.emplace_back("bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    // benchs.emplace_back(
+    //     "bench2_base_variant_skipping", [&](int bs, int gs) { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    // benchs.emplace_back(
+    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    // benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
+    //     return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    // });
+    // benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&](int bs, int gs) {
+    //     return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    // });
+    // benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&](int bs, int gs) {
+    //     return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    // });
+    // benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&](int bs, int gs) {
+    //     return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    // });
+    // benchs.emplace_back("bench8_cub_flagged", [&](int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
 
     if (use_pattern_mask) {
         benchs.emplace_back(
-            "bench9_pattern", [&]() { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, 256, 1024); });
+            "bench9_pattern", [&](int bs, int gs) { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, bs, gs); });
     }
 
     // run benchmark
-    std::vector<float> timings(benchs.size(), 0.0f);
-    for (int it = 0; it < iterations; it++) {
-        for (size_t i = 0; i < benchs.size(); i++) {
-            timings[i] += benchs[i].second();
-            size_t failure_count;
-            if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {
-                fprintf(stderr, "validation failure in bench %s, run %i: %zu failures\n", benchs[i].first.c_str(), it, failure_count);
-                // exit(EXIT_FAILURE);
+    for (int grid_size = 32; grid_size <= 2048; grid_size *= 2) {
+        for (int block_size = 32; block_size <= 1024; block_size *= 2) {
+            std::vector<timings> timings(benchs.size());
+            for (int it = 0; it < iterations; it++) {
+                for (size_t i = 0; i < benchs.size(); i++) {
+                    timings[i] += benchs[i].second(block_size, grid_size);
+                    size_t failure_count;
+                    if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {
+                        fprintf(stderr, "validation failure in bench %s (%d, %d), run %i: %zu failures\n", benchs[i].first.c_str(), block_size, grid_size, it, failure_count);
+                        // exit(EXIT_FAILURE);
+                    }
+                }
+            }
+            for (int i = 0; i < benchs.size(); i++) {
+                std::cout << "benchmark " << benchs[i].first << " time (ms): " << (double)timings[i].total / iterations << std::endl;
             }
         }
-    }
-    for (int i = 0; i < benchs.size(); i++) {
-        std::cout << "benchmark " << benchs[i].first << " time (ms): " << (double)timings[i] / iterations << std::endl;
     }
     return 0;
 }

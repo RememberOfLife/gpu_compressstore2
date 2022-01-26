@@ -5,6 +5,40 @@
 #include <src/kernels/kernel_streaming_add.cuh>
 #include "cuda_try.cuh"
 #include "utils.cuh"
+
+struct timings {
+    float popc;
+    float pss1;
+    float pss2;
+    float proc;
+    float total;
+    timings():
+        popc(-1),
+        pss1(-1),
+        pss2(-1),
+        proc(-1),
+        total(-1)
+    {}
+    static float add_timings(float t1, float t2)
+    {
+        if (t1 < 0) {
+            return t2;
+        }
+        if (t2 < 0) {
+            return t1;
+        }
+        return t1 + t2;
+    }
+    void operator+=(timings r)
+    {
+        popc = add_timings(popc, r.popc);
+        pss1 = add_timings(pss1, r.pss1);
+        pss2 = add_timings(pss2, r.pss2);
+        proc = add_timings(proc, r.proc);
+        total = add_timings(total, r.total);
+    }
+};
+
 struct intermediate_data {
     uint32_t* d_pss;
     uint32_t* d_pss2;
@@ -103,43 +137,43 @@ struct intermediate_data {
 };
 
 template <class T>
-float bench1_base_variant(
+timings bench1_base_variant(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
-        launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
-        launch_3pass_proc_none(
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
+        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        times.proc = launch_3pass_proc_none(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench2_base_variant_skipping(
+timings bench2_base_variant_skipping(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
-        launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
-        launch_3pass_proc_none(
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
+        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        times.proc = launch_3pass_proc_none(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_pss, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench3_3pass_streaming(
+timings bench3_3pass_streaming(
     intermediate_data* id,
     T* d_input,
     uint8_t* d_mask,
@@ -154,7 +188,7 @@ float bench3_3pass_streaming(
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
     // since bymask bits are padded to zero in the last byte, we can
     // increase element_count to a multiple of 8
-    float time = 0;
+    timings times{};
     if (stream_count < 1) {
         error("stream_count must be >= 1");
     }
@@ -164,7 +198,7 @@ float bench3_3pass_streaming(
     }
     if (stream_count != p2_sc) error("stream_count must be a power of 2");
 
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
         CUDA_TRY(cudaMemset(id->d_out_count, 0x00, sizeof(uint32_t) * (stream_count + 1)));
 
@@ -235,103 +269,103 @@ float bench3_3pass_streaming(
 
         CUDA_TRY(cudaDeviceSynchronize());
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench4_3pass_optimized_read_non_skipping_cub_pss(
+timings bench4_3pass_optimized_read_non_skipping_cub_pss(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
 
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
         CUDA_TRY(cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count));
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
 
-        launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench5_3pass_optimized_read_skipping_partial_pss(
+timings bench5_3pass_optimized_read_skipping_partial_pss(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
-        launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        launch_3pass_proc_true(
+        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
+        times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss, false, id->d_popc, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench6_3pass_optimized_read_skipping_two_phase_pss(
+timings bench6_3pass_optimized_read_skipping_two_phase_pss(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
-        launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
-        launch_3pass_proc_true(
+        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
+        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench7_3pass_optimized_read_skipping_cub_pss(
+timings bench7_3pass_optimized_read_skipping_cub_pss(
     intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
 {
     id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
-    float time = 0;
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
 
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
         CUDA_TRY(cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count));
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
 
-        launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
             element_count);
     });
-    return time;
+    return times;
 }
 
-template <class T> float bench8_cub_flagged(intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count)
+template <class T> timings bench8_cub_flagged(intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count)
 {
     id->prepare_buffers(element_count, 0, d_output, d_mask);
     bitstream_iterator bit{d_mask};
-    float time = 0;
+    timings times{};
     // determine temporary device storage requirements
-    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         cub::DeviceSelect::Flagged(id->d_cub_intermediate, id->cub_intermediate_size, d_input, bit, d_output, id->d_out_count, element_count);
     });
-    return time;
+    return times;
 }
 
 template <class T>
-float bench9_pattern(
+timings bench9_pattern(
     intermediate_data* id,
     T* d_input,
     uint32_t pattern,
@@ -343,13 +377,13 @@ float bench9_pattern(
     int grid_size)
 {
     id->prepare_buffers(element_count, 0, d_output, NULL);
-    float time = 0;
+    timings times{};
     // determine temporary device storage requirements
     // CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &time, {
-    return launch_pattern_proc(
+    times.total = launch_pattern_proc(
         id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, element_count, pattern, pattern_length, chunk_length);
     // });
-    return time;
+    return times;
 }
 
 bool validate(intermediate_data* id, float* d_validation, float* d_output, uint64_t out_length, bool report_failures, uint64_t* failure_count = NULL)
