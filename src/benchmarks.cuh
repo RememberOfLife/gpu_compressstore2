@@ -1,4 +1,5 @@
 #pragma once
+#include <iomanip>
 #include <src/cub_wraps.cuh>
 #include <src/kernels/kernel_3pass.cuh>
 #include <src/kernels/kernel_pattern.cuh>
@@ -29,6 +30,15 @@ struct timings {
         }
         return t1 + t2;
     }
+    timings& operator/(float r)
+    {
+        popc /= r;
+        pss1 /= r;
+        pss2 /= r;
+        proc /= r;
+        total /= r;
+        return *this;
+    }
     void operator+=(timings r)
     {
         popc = add_timings(popc, r.popc);
@@ -38,6 +48,12 @@ struct timings {
         total = add_timings(total, r.total);
     }
 };
+std::ostream& operator<<(std::ostream& os, timings t)
+{
+    os << std::setprecision(6);
+    os << t.popc << ";" << t.pss1 << ";" << t.pss2 << ";" << t.proc << ";" << t.total;
+    return os;
+}
 
 struct intermediate_data {
     uint32_t* d_pss;

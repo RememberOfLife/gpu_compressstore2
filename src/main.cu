@@ -1,4 +1,3 @@
-#include <__clang_cuda_device_functions.h>
 #include <bitset>
 #include <cstdlib>
 #include <cstdint>
@@ -9,7 +8,7 @@
 #include "data_generator.cuh"
 #include <vector>
 
-#define DISABLE_CUDA_TIME
+// #define DISABLE_CUDA_TIME
 #include "cuda_time.cuh"
 #include "cuda_try.cuh"
 
@@ -153,24 +152,24 @@ int main(int argc, char** argv)
 
     std::vector<std::pair<std::string, std::function<timings(int, int)>>> benchs;
 
-    // benchs.emplace_back("bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
-    // benchs.emplace_back(
-    //     "bench2_base_variant_skipping", [&](int bs, int gs) { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
-    // benchs.emplace_back(
-    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
-    // benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
-    //     return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
-    // });
-    // benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&](int bs, int gs) {
-    //     return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
-    // });
-    // benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&](int bs, int gs) {
-    //     return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
-    // });
-    // benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&](int bs, int gs) {
-    //     return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
-    // });
-    // benchs.emplace_back("bench8_cub_flagged", [&](int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
+    benchs.emplace_back("bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    benchs.emplace_back(
+        "bench2_base_variant_skipping", [&](int bs, int gs) { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    benchs.emplace_back(
+        "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
+        return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
+    benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&](int bs, int gs) {
+        return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
+    benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&](int bs, int gs) {
+        return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
+    benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&](int bs, int gs) {
+        return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
+    benchs.emplace_back("bench8_cub_flagged", [&](int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
 
     if (use_pattern_mask) {
         benchs.emplace_back(
@@ -192,7 +191,7 @@ int main(int argc, char** argv)
                 }
             }
             for (int i = 0; i < benchs.size(); i++) {
-                std::cout << "benchmark " << benchs[i].first << " time (ms): " << (double)timings[i].total / iterations << std::endl;
+                std::cout << benchs[i].first << ";" << block_size << ";" << grid_size << ";" << timings[i]/static_cast<float>(iterations) << std::endl;
             }
         }
     }
