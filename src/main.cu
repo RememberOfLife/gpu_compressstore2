@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <bitset>
 #include <cstdlib>
 #include <cstdint>
@@ -31,14 +32,15 @@ int main(int argc, char** argv)
     int iterations = 100;
     bool report_failures = false;
 
+    bool use_csv = false;
     bool use_pattern_mask = true;
     int pattern_length = 8;
     uint32_t pattern;
     float selectivity = 0.5;
-    bool use_selectivity = true;
+    bool use_uniform = false;
     bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:r:z")) != -1) {
+    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu")) != -1) {
         switch (option) {
             case 'd': {
                 int device = atoi(optarg);
@@ -65,7 +67,6 @@ int main(int argc, char** argv)
                 pattern_length = atoi(optarg);
                 if (pattern_length > 32 || pattern_length < 1) pattern_length = 8;
                 printf("setting pattern length to %i\n", pattern_length);
-                use_pattern_mask = true;
             } break;
             case 's': {
                 selectivity = atof(optarg);
@@ -74,20 +75,31 @@ int main(int argc, char** argv)
             case 't': {
                 threshold = atof(optarg);
                 printf("setting value threshold to%f\n", threshold);
-                use_pattern_mask = false;
-                use_selectivity = false;
+                use_csv = true;
             } break;
             case 'z': {
                 printf("using zipf mask\n");
                 use_zipf = true;
             } break;
+            case 'u': {
+                printf("using uniform mask\n");
+                use_uniform = true;
+            } break;
             case ':': {
                 printf("-%c needs a value\n", optopt);
+                exit(-1);
             } break;
             case '?': { // used for some unknown options
                 printf("unknown option: %c\n", optopt);
+                exit(-1);
             } break;
         }
+    }
+    if (use_zipf || use_uniform || use_csv) {
+        use_pattern_mask = false;
+    }
+    if (use_zipf + use_uniform + use_csv + use_pattern_mask != 1) {
+        error("can only use one mask type\n");
     }
     if (use_pattern_mask) {
         int pattern_one_count = pattern_length * selectivity;
@@ -108,39 +120,45 @@ int main(int argc, char** argv)
         std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
     }
     std::vector<float> col;
-    if (lines != 0) {
+    if (!use_csv) {
         printf("generating %i lines of input\n", lines);
         col.resize(lines);
-        if (use_zipf) {
-            generate_mask_zipf((uint8_t*)&col[0], lines * 4, 0, lines * 4);
-        } else {
-            generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
-        }
+        generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
     }
     else {
         printf("parsing %s\n", csv_path);
         load_csv(csv_path, {3}, col);
+        if (lines > 0) {
+            col.resize(std::min(col.size(), static_cast<size_t>(lines)));
+        }
     }
     float* d_input = vector_to_gpu(col);
     float* d_output = alloc_gpu<float>(col.size() + 1);
 
     // gen predicate mask
-    size_t one_count;
+    size_t one_count = 0;
     std::vector<uint8_t> pred;
-    if (!use_pattern_mask && !use_selectivity) {
+    if (use_csv) {
         pred = gen_predicate(col, predicate_function, &one_count);
     }
-    else {
+    if (use_uniform) {
+        pred.resize(ceildiv(col.size(), 8));
+        generate_mask_uniform(&pred[0], 0, pred.size(), selectivity, &one_count);
+    }
+    if (use_zipf) {
+        pred.resize(ceildiv(col.size(), 8));
+        generate_mask_zipf(&pred[0], pred.size(), 0, pred.size(), &one_count);
+    }
+    if (use_pattern_mask) {
         pred.resize(ceildiv(col.size(), 8));
         // mask from pattern instead
-        one_count = 0;
         generate_mask_pattern(&pred[0], 0, pred.size(), pattern, pattern_length, &one_count);
-        // make sure unused bits in bitmask are 0
-        int unused_bits = overlap(col.size(), 8);
-        if (unused_bits) {
-            pred.back() >>= unused_bits;
-            pred.back() <<= unused_bits;
-        }
+    }
+    // make sure unused bits in bitmask are 0
+    int unused_bits = overlap(col.size(), 8);
+    if (unused_bits) {
+        pred.back() >>= unused_bits;
+        pred.back() <<= unused_bits;
     }
 
     // put predicate mask on gpu

@@ -8,7 +8,7 @@
 // offset: where to start generating inside the buffer
 // length: how many bytes to generate
 // selectivity: [0,1] chance for every bit to be a 1, default is 0
-void generate_mask_uniform(uint8_t* h_buffer, uint64_t offset, uint64_t length, double selectivity)
+void generate_mask_uniform(uint8_t* h_buffer, uint64_t offset, uint64_t length, double selectivity, size_t* out_count = NULL)
 {
     uint64_t p_adjusted = selectivity * UINT32_MAX;
     fast_prng rng(42);
@@ -17,6 +17,9 @@ void generate_mask_uniform(uint8_t* h_buffer, uint64_t offset, uint64_t length, 
         for (int j = 7; j >= 0; j--) {
             if (rng.rand() < p_adjusted) {
                 acc |= (1 << j);
+                if (out_count) {
+                    (*out_count)++;
+                }
             }
         }
         h_buffer[i] = acc;
@@ -26,7 +29,7 @@ void generate_mask_uniform(uint8_t* h_buffer, uint64_t offset, uint64_t length, 
 // count: number of bytes on the total mask
 // offset: where to start generating inside the buffer
 // length: how many bytes to generate
-void generate_mask_zipf(uint8_t* h_buffer, uint64_t count, uint64_t offset, uint64_t length)
+void generate_mask_zipf(uint8_t* h_buffer, uint64_t count, uint64_t offset, uint64_t length, size_t* out_count = NULL)
 {
     fast_prng rng(42);
     // probably r = a * (c * x)^-k
@@ -43,6 +46,9 @@ void generate_mask_zipf(uint8_t* h_buffer, uint64_t count, uint64_t offset, uint
             double rv = static_cast<double>(rng.rand()) / static_cast<double>(UINT32_MAX);
             if (rv < ev) {
                 acc |= (1 << j);
+                if (out_count) {
+                    (*out_count)++;
+                }
             }
         }
         h_buffer[i] = acc;
