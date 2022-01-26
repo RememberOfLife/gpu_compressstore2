@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <bitset>
+#include <bit>
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
@@ -33,6 +34,7 @@ int main(int argc, char** argv)
     bool report_failures = false;
 
     int grid_size_max = 2048;
+    int grid_size_min = 32;
     bool use_csv = false;
     bool use_pattern_mask = true;
     int pattern_length = 8;
@@ -41,11 +43,18 @@ int main(int argc, char** argv)
     bool use_uniform = false;
     bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu:g")) != -1) {
+    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu:g:m")) != -1) {
         switch (option) {
             case 'g': {
                 int grid_size_max = atoi(optarg);
                 fprintf(stderr, "using max grid size %i\n", grid_size_max);
+            } break;
+            case 'm': {
+                int grid_size_min = atoi(optarg);
+                fprintf(stderr, "using min grid size %i\n", grid_size_min);
+                if (std::popcount((uint32_t)grid_size_min) != 1) {
+                    error("min grid size has to be a power of two\n");
+                }
             } break;
             case 'd': {
                 int device = atoi(optarg);
@@ -210,7 +219,7 @@ int main(int argc, char** argv)
 
     std::cout << "benchmark;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
     // run benchmark
-    for (int grid_size = 32; grid_size <= grid_size_max; grid_size *= 2) {
+    for (int grid_size = grid_size_min; grid_size <= grid_size_max; grid_size *= 2) {
         for (int block_size = 32; block_size <= 1024; block_size *= 2) {
             std::vector<timings> timings(benchs.size());
             for (int it = 0; it < iterations; it++) {
