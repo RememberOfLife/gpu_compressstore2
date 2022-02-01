@@ -366,6 +366,7 @@ __device__ void kernel_3pass_proc_true_striding_optimized_writeout(
     constexpr uint32_t WARPS_PER_BLOCK = BLOCK_DIM / CUDA_WARP_SIZE;
     __shared__ uint32_t smem[BLOCK_DIM];
     __shared__ uint32_t out_indices[BLOCK_DIM];
+    __shared__ uint32_t smem_out_idx[WARPS_PER_BLOCK];
     uint32_t warp_remainder = WARPS_PER_BLOCK;
     while (warp_remainder % 2 == 0) {
         warp_remainder /= 2;
@@ -383,22 +384,18 @@ __device__ void kernel_3pass_proc_true_striding_optimized_writeout(
     uint32_t warp_index = threadIdx.x / CUDA_WARP_SIZE;
     uint32_t warp_base_index = threadIdx.x - warp_offset;
     uint32_t base_idx = blockIdx.x * grid_stride + warp_index * warp_stride;
-    if (base_idx >= element_count) {
-        return;
-    }
     uint32_t stride = 1024;
-    uint32_t warp_output_index = 0;
-    if (complete_pss) {
-        if (base_idx / chunk_length < chunk_count) {
-            warp_output_index = pss[base_idx / chunk_length];
+    if (base_idx >= element_count) return;
+    if (warp_offset == 0) {
+        if (complete_pss) {
+            smem_out_idx[warp_index] = pss[base_idx / chunk_length];
         }
         else {
-            return;
+            smem_out_idx[warp_index] = d_3pass_pproc_pssidx(base_idx / chunk_length, pss, chunk_count_p2);
         }
     }
-    else {
-        warp_output_index = d_3pass_pproc_pssidx(base_idx / chunk_length, pss, chunk_count_p2);
-    }
+    __syncwarp();
+    uint32_t warp_output_index = smem_out_idx[warp_index];
     uint32_t stop_idx = base_idx + warp_stride;
     if (stop_idx > element_count) {
         stop_idx = element_count;
@@ -447,24 +444,30 @@ __device__ void kernel_3pass_proc_true_striding_optimized_writeout(
             smem[threadIdx.x] = 0;
         }
         __syncwarp();
+        uint32_t input_index = base_idx + warp_offset;
         for (int i = 0; i < CUDA_WARP_SIZE; i++) {
             uint32_t s = smem[threadIdx.x - warp_offset + i];
             uint32_t out_idx_me = __popc(s >> (CUDA_WARP_SIZE - warp_offset));
             bool v = (s >> ((CUDA_WARP_SIZE - 1) - warp_offset)) & 0b1;
-            uint32_t input_index = base_idx + warp_offset + (i * CUDA_WARP_SIZE);
-            uint32_t out_idx_warp = __popc(s);
+            if (warp_offset == CUDA_WARP_SIZE - 1) {
+                smem_out_idx[warp_index] = out_idx_me + v;
+            }
+            __syncwarp();
+            uint32_t out_idx_warp = smem_out_idx[warp_index];
             if (elements_aquired + out_idx_warp >= CUDA_WARP_SIZE) {
-                if (v && out_idx_me + elements_aquired < CUDA_WARP_SIZE) {
-                    out_indices[warp_base_index + out_idx_me + elements_aquired] = input_index;
+                uint32_t out_idx_me_full = out_idx_me + elements_aquired;
+                uint32_t out_idices_idx = warp_base_index + out_idx_me_full;
+                if (v && out_idx_me_full < CUDA_WARP_SIZE) {
+                    out_indices[out_idices_idx] = input_index;
                 }
                 __syncwarp();
                 output[warp_output_index + warp_offset] = input[out_indices[warp_base_index + warp_offset]];
                 __syncwarp();
-                if (v && out_idx_me + elements_aquired >= CUDA_WARP_SIZE) {
-                    out_indices[warp_base_index + (out_idx_me + elements_aquired) % CUDA_WARP_SIZE] = input_index;
+                if (v && out_idx_me_full >= CUDA_WARP_SIZE) {
+                    out_indices[out_idices_idx - CUDA_WARP_SIZE] = input_index;
                 }
                 elements_aquired += out_idx_warp;
-                elements_aquired %= CUDA_WARP_SIZE;
+                elements_aquired -= CUDA_WARP_SIZE;
                 warp_output_index += CUDA_WARP_SIZE;
             }
             else {
@@ -473,6 +476,7 @@ __device__ void kernel_3pass_proc_true_striding_optimized_writeout(
                 }
                 elements_aquired += out_idx_warp;
             }
+            input_index += CUDA_WARP_SIZE;
         }
         base_idx += stride;
     }
