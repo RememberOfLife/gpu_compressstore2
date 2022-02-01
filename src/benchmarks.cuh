@@ -308,7 +308,7 @@ timings bench4_3pass_optimized_read_non_skipping_cub_pss(
             cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length)));
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
 
-        times.proc = launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true<T, false>(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
             element_count);
     });
@@ -328,7 +328,7 @@ timings bench5_3pass_optimized_read_skipping_partial_pss(
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count(chunk_length) * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
         times.pss1 = launch_3pass_pss_gmem(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
-        times.proc = launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true<T, false>(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss, false, id->d_popc, chunk_length,
             element_count);
     });
@@ -350,7 +350,7 @@ timings bench6_3pass_optimized_read_skipping_two_phase_pss(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
         times.pss2 =
             launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length));
-        times.proc = launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true<T, false>(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
             element_count);
     });
@@ -374,7 +374,7 @@ timings bench7_3pass_optimized_read_skipping_cub_pss(
             cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length)));
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
 
-        times.proc = launch_3pass_proc_true(
+        times.proc = launch_3pass_proc_true<T, false>(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
             element_count);
     });
