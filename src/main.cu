@@ -155,7 +155,7 @@ int main(int argc, char** argv)
         std::bitset<32> pattern_bitset(pattern); // load data
         std::stringstream ss;
         ss << pattern_bitset;
-        std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
+        std::cerr << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
     }
     std::vector<input_data_type> col;
     if (!use_csv) {
