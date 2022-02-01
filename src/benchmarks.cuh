@@ -58,9 +58,8 @@ struct intermediate_data {
     uint32_t* d_out_count;
     uint64_t* d_failure_count;
     uint8_t* d_cub_intermediate;
-    size_t chunk_length;
     size_t element_count;
-    size_t chunk_count;
+    size_t chunk_length_min;
     size_t max_stream_count;
     size_t cub_intermediate_size;
     size_t intermediate_size_3pass;
@@ -70,24 +69,24 @@ struct intermediate_data {
     cudaEvent_t stop;
     cudaStream_t* streams;
     cudaEvent_t* stream_events;
-    intermediate_data(size_t element_count, int chunk_length, int max_stream_count)
+    intermediate_data(size_t element_count, int chunk_length_min, int max_stream_count)
     {
-        this->chunk_length = chunk_length;
+        this->chunk_length_min = chunk_length_min;
         this->element_count = element_count;
-        this->chunk_count = ceildiv(ceil2mult(element_count, 8), chunk_length);
         this->max_stream_count = max_stream_count;
         uint8_t* null = (uint8_t*)NULL;
-        intermediate_size_3pass = (chunk_count + 1) * sizeof(uint32_t);
-        if (chunk_length > 32) {
+        size_t chunk_count_max = chunk_count(chunk_length_min);
+        intermediate_size_3pass = (chunk_count_max + 1) * sizeof(uint32_t);
+        if (chunk_length_min > 32) {
             // for the streaming kernel
             intermediate_size_3pass = ceildiv(element_count + 1, 32) * sizeof(uint32_t);
         }
         size_t temp_storage_bytes_pss;
-        CUDA_TRY(cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_pss, null, null, chunk_count));
+        CUDA_TRY(cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_pss, null, null, chunk_count_max));
         size_t temp_storage_bytes_flagged;
         cub::DeviceSelect::Flagged(null, temp_storage_bytes_flagged, null, null, null, null, element_count);
         size_t temp_storage_bytes_exclusive_sum;
-        cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_exclusive_sum, null, null, chunk_count);
+        cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_exclusive_sum, null, null, chunk_count_max);
         cub_intermediate_size = std::max({temp_storage_bytes_pss, temp_storage_bytes_flagged, temp_storage_bytes_exclusive_sum});
         CUDA_TRY(cudaMalloc(&d_cub_intermediate, cub_intermediate_size));
         CUDA_TRY(cudaMalloc(&d_pss, intermediate_size_3pass));
@@ -123,7 +122,7 @@ struct intermediate_data {
         }
         CUDA_TRY(cudaMemset(d_out_count, 0, (max_stream_count + 1) * sizeof(*d_out_count)));
         CUDA_TRY(cudaMemset(d_output, 0, element_count * sizeof(T)));
-        if (this->element_count >= element_count || this->chunk_length >= chunk_length) return;
+        if (this->element_count >= element_count || this->chunk_length_min >= chunk_length) return;
         error("sizes in intermediate data are smaller than the ones "
               "submitted "
               "to the algorithm");
@@ -146,6 +145,10 @@ struct intermediate_data {
         free(streams);
         free(stream_events);
     }
+    size_t chunk_count(int chunk_length)
+    {
+        return ceildiv(ceil2mult(element_count, 8), chunk_length);
+    }
 };
 
 template <class T>
@@ -158,8 +161,10 @@ timings bench1_base_variant(
         element_count = ceil2mult(element_count, 8);
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
-        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        times.pss1 = launch_3pass_pss_gmem(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
+        times.pss2 =
+            launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length));
         times.proc = launch_3pass_proc_none(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
             element_count);
@@ -177,8 +182,10 @@ timings bench2_base_variant_skipping(
         element_count = ceil2mult(element_count, 8);
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
-        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        times.pss1 = launch_3pass_pss_gmem(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
+        times.pss2 =
+            launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length));
         times.proc = launch_3pass_proc_none(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_pss, chunk_length,
             element_count);
@@ -297,9 +304,10 @@ timings bench4_3pass_optimized_read_non_skipping_cub_pss(
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
 
-        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
-        CUDA_TRY(cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count));
-        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
+        CUDA_TRY(
+            cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length)));
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
 
         times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, NULL, chunk_length,
@@ -318,8 +326,9 @@ timings bench5_3pass_optimized_read_skipping_partial_pss(
         element_count = ceil2mult(element_count, 8);
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
-        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
-        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
+        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count(chunk_length) * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
+        times.pss1 = launch_3pass_pss_gmem(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
         times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss, false, id->d_popc, chunk_length,
             element_count);
@@ -337,9 +346,11 @@ timings bench6_3pass_optimized_read_skipping_two_phase_pss(
         element_count = ceil2mult(element_count, 8);
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
-        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
-        times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
-        times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
+        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count(chunk_length) * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
+        times.pss1 = launch_3pass_pss_gmem(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count(chunk_length), id->d_out_count);
+        times.pss2 =
+            launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length));
         times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
             element_count);
@@ -357,11 +368,12 @@ timings bench7_3pass_optimized_read_skipping_cub_pss(
         element_count = ceil2mult(element_count, 8);
         times.popc =
             launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
-        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count(chunk_length) * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
 
-        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
-        CUDA_TRY(cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count));
-        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
+        CUDA_TRY(
+            cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length)));
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
 
         times.proc = launch_3pass_proc_true(
             id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
