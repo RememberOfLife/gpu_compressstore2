@@ -169,7 +169,7 @@ int main(int argc, char** argv)
     if (!use_csv) {
         fprintf(stderr, "generating %i lines of input\n", lines);
         col.resize(lines);
-        generate_mask_uniform((uint8_t*)&col[0], 0, lines * 4, 0.5);
+        generate_mask_uniform((uint8_t*)&col[0], 0, lines * sizeof(input_data_type), 0.5);
     }
     else {
         fprintf(stderr, "parsing %s\n", csv_path);
@@ -202,7 +202,9 @@ int main(int argc, char** argv)
     }
     // make sure unused bits in bitmask are 0
     int unused_bits = overlap(col.size(), 8);
+
     if (unused_bits) {
+        one_count -= std::popcount(((uint32_t)pred.back() << (8 - unused_bits)) & 0xFF);
         pred.back() >>= unused_bits;
         pred.back() <<= unused_bits;
     }
