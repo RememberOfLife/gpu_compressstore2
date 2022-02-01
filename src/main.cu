@@ -29,13 +29,15 @@ bool predicate_function(input_data_type f)
 }
 int main(int argc, char** argv)
 {
-    int lines = 0;
+    int lines = 1000;
     const char* csv_path = "../res/Arade_1.csv";
     int iterations = 100;
     bool report_failures = false;
-
+    int chunk_length = 1024;
     int grid_size_max = 2048;
     int grid_size_min = 32;
+    int block_size_max = 1024;
+    int block_size_min = 32;
     bool use_csv = false;
     bool use_pattern_mask = true;
     int pattern_length = 8;
@@ -44,23 +46,44 @@ int main(int argc, char** argv)
     bool use_uniform = false;
     bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":zurd:l:i:f:p:s:t:g:m:")) != -1) {
+    while ((option = getopt(argc, argv, ":zurd:l:i:f:p:s:t:g:m:c:b:n:")) != -1) {
         switch (option) {
             case 'g': {
-                int grid_size_max = atoi(optarg);
+                grid_size_max = atoi(optarg);
                 fprintf(stderr, "using max grid size %i\n", grid_size_max);
             } break;
             case 'm': {
-                int grid_size_min = atoi(optarg);
+                grid_size_min = atoi(optarg);
                 fprintf(stderr, "using min grid size %i\n", grid_size_min);
                 if (std::popcount((uint32_t)grid_size_min) != 1) {
                     error("min grid size has to be a power of two\n");
+                }
+            } break;
+            case 'b': {
+                block_size_max = atoi(optarg);
+                fprintf(stderr, "using max block size %i\n", block_size_max);
+                if (std::popcount((uint32_t)block_size_max) != 1 || block_size_max > 1024 || block_size_max < 32) {
+                    error("max block size has to be a power of two >= 32 and <= 1024 \n");
+                }
+            } break;
+            case 'n': {
+                block_size_min = atoi(optarg);
+                fprintf(stderr, "using min block size %i\n", block_size_min);
+                if (std::popcount((uint32_t)block_size_min) != 1 || block_size_min > 1024 || block_size_min < 32) {
+                    error("min block size has to be a power of two >= 32 and <= 1024 \n");
                 }
             } break;
             case 'd': {
                 int device = atoi(optarg);
                 fprintf(stderr, "setting device numer to %i\n", device);
                 CUDA_TRY(cudaSetDevice(device));
+            } break;
+            case 'c': {
+                chunk_length = atoi(optarg);
+                fprintf(stderr, "setting chunk length to %i\n", chunk_length);
+                if (std::popcount((uint32_t)chunk_length) != 1 || chunk_length < 32) {
+                    error("chunk length has to be a power of two >= 32\n");
+                }
             } break;
             case 'l': {
                 lines = atoi(optarg);
@@ -190,46 +213,47 @@ int main(int argc, char** argv)
     fprintf(stderr, "starting benchmark\n");
 
     // prepare candidates for benchmark
-    intermediate_data id{col.size(), 1024, 8}; // setup shared intermediate data
+    intermediate_data id{col.size(), chunk_length, 8}; // setup shared intermediate data
 
-    std::vector<std::pair<std::string, std::function<timings(int, int)>>> benchs;
+    std::vector<std::pair<std::string, std::function<timings(int, int, int)>>> benchs;
 
     benchs.emplace_back(
-        "bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
-    benchs.emplace_back("bench2_base_variant_skipping", [&](int bs, int gs) {
-        return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+        "bench1_base_variant", [&](int cs, int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs); });
+    benchs.emplace_back("bench2_base_variant_skipping", [&](int cs, int bs, int gs) {
+        return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
     // benchs.emplace_back(
-    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    //     "bench3_3pass_streaming", [&](int cs, int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs,
+    //     gs);
     //     });
-    benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
-        return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int cs, int bs, int gs) {
+        return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
-    benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&](int bs, int gs) {
-        return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    benchs.emplace_back("bench5_3pass_optimized_read_skipping_partial_pss", [&](int cs, int bs, int gs) {
+        return bench5_3pass_optimized_read_skipping_partial_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
-    benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&](int bs, int gs) {
-        return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    benchs.emplace_back("bench6_3pass_optimized_read_skipping_two_phase_pss", [&](int cs, int bs, int gs) {
+        return bench6_3pass_optimized_read_skipping_two_phase_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
-    benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&](int bs, int gs) {
-        return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    benchs.emplace_back("bench7_3pass_optimized_read_skipping_cub_pss", [&](int cs, int bs, int gs) {
+        return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
-    benchs.emplace_back("bench8_cub_flagged", [&](int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
+    benchs.emplace_back("bench8_cub_flagged", [&](int cs, int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
 
     if (use_pattern_mask) {
-        benchs.emplace_back("bench9_pattern", [&](int bs, int gs) {
-            return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, bs, gs);
+        benchs.emplace_back("bench9_pattern", [&](int cs, int bs, int gs) {
+            return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), cs, bs, gs);
         });
     }
 
-    std::cout << "benchmark;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
+    std::cout << "benchmark;chunk_length;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
     // run benchmark
     for (int grid_size = grid_size_min; grid_size <= grid_size_max; grid_size *= 2) {
-        for (int block_size = 32; block_size <= 1024; block_size *= 2) {
+        for (int block_size = block_size_min; block_size <= block_size_max; block_size *= 2) {
             std::vector<timings> timings(benchs.size());
             for (int it = 0; it < iterations; it++) {
                 for (size_t i = 0; i < benchs.size(); i++) {
-                    timings[i] += benchs[i].second(block_size, grid_size);
+                    timings[i] += benchs[i].second(chunk_length, block_size, grid_size);
                     size_t failure_count;
                     if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {
                         fprintf(
@@ -240,8 +264,8 @@ int main(int argc, char** argv)
                 }
             }
             for (int i = 0; i < benchs.size(); i++) {
-                std::cout << benchs[i].first << ";" << block_size << ";" << grid_size << ";" << timings[i] / static_cast<float>(iterations)
-                          << std::endl;
+                std::cout << benchs[i].first << ";" << chunk_length << ";" << block_size << ";" << grid_size << ";"
+                          << timings[i] / static_cast<float>(iterations) << std::endl;
             }
         }
     }
