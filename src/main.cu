@@ -262,7 +262,6 @@ int main(int argc, char** argv)
                 std::vector<timings> timings(benchs.size());
                 for (int it = 0; it < iterations; it++) {
                     for (size_t i = 0; i < benchs.size(); i++) {
-                        cudaMemset(d_output, 0xFF, col.size() * 4);
                         timings[i] += benchs[i].second(chunk_length, block_size, grid_size);
                         size_t failure_count;
                         if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {

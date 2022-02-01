@@ -273,7 +273,8 @@ __global__ void kernel_3pass_proc_true_striding(
         warp_remainder = 1;
     }
     uint32_t grid_stride = chunk_length * warp_remainder;
-    while (grid_stride % (CUDA_WARP_SIZE * BLOCK_DIM) != 0 || grid_stride * gridDim.x < element_count) {
+    while (grid_stride % (CUDA_WARP_SIZE * BLOCK_DIM) != 0 || grid_stride * gridDim.x < element_count ||
+           grid_stride / WARPS_PER_BLOCK < chunk_length) {
         grid_stride *= 2;
     }
     uint32_t warp_stride = grid_stride / WARPS_PER_BLOCK;
@@ -298,14 +299,32 @@ __global__ void kernel_3pass_proc_true_striding(
         }
     }
     uint32_t stop_idx = base_idx + warp_stride;
-    if (stop_idx > chunk_length * chunk_count) {
-        stop_idx = chunk_length * chunk_count;
+    if (stop_idx > element_count) {
+        stop_idx = element_count;
     }
     for (uint32_t tid = base_idx + warp_offset; tid < stop_idx; tid += stride) {
         // check chunk popcount at base_idx for potential skipped
-        if (popc && popc[base_idx / stride] == 0) {
-            base_idx += stride;
-            continue;
+        if (popc) {
+            if (chunk_length >= stride) {
+                if (popc[base_idx / chunk_length] == 0) {
+                    tid += chunk_length - stride;
+                    base_idx += chunk_length;
+                    continue;
+                }
+            }
+            else {
+                bool empty_stride = true;
+                for (uint32_t cid = base_idx / chunk_length; cid < (base_idx + stride) / chunk_length; cid++) {
+                    if (popc[cid] != 0) {
+                        empty_stride = false;
+                        break;
+                    }
+                }
+                if (empty_stride) {
+                    base_idx += stride;
+                    continue;
+                }
+            }
         }
         uint32_t mask_idx = base_idx / 8 + warp_offset * 4;
         if (mask_idx < mask_byte_count) {

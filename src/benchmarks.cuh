@@ -120,7 +120,7 @@ struct intermediate_data {
             }
         }
         CUDA_TRY(cudaMemset(d_out_count, 0, (max_stream_count + 1) * sizeof(*d_out_count)));
-        CUDA_TRY(cudaMemset(d_output, 0, element_count * sizeof(T)));
+        CUDA_TRY(cudaMemset(d_output, 0xFF, element_count * sizeof(T)));
         if (this->element_count >= element_count || this->chunk_length_min >= chunk_length) return;
         error("sizes in intermediate data are smaller than the ones "
               "submitted "
