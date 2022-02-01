@@ -21,7 +21,7 @@
 #include "kernels/data_generator.cuh"
 #include <unistd.h>
 
-typedef uint64_t input_data_type;
+typedef float input_data_type;
 static float threshold = 200;
 bool predicate_function(input_data_type f)
 {
