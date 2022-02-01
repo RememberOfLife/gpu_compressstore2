@@ -249,12 +249,14 @@ int main(int argc, char** argv)
         return bench7_3pass_optimized_read_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
     benchs.emplace_back("bench8_cub_flagged", [&](int cs, int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
-
     if (use_pattern_mask) {
         benchs.emplace_back("bench9_pattern", [&](int cs, int bs, int gs) {
             return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), cs, bs, gs);
         });
     }
+    benchs.emplace_back("bench10_3pass_optimized_read_skipping_optimized_writeout_cub_pss", [&](int cs, int bs, int gs) {
+        return bench10_3pass_optimized_read_skipping_optimized_writeout_cub_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
+    });
 
     std::cout << "benchmark;chunk_length;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
     // run benchmark

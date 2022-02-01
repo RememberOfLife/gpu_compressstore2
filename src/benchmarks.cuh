@@ -415,6 +415,30 @@ timings bench9_pattern(
     return times;
 }
 
+template <class T>
+timings bench10_3pass_optimized_read_skipping_optimized_writeout_cub_pss(
+    intermediate_data* id, T* d_input, uint8_t* d_mask, T* d_output, size_t element_count, size_t chunk_length, int block_size, int grid_size)
+{
+    id->prepare_buffers(element_count, chunk_length, d_output, d_mask);
+    timings times{};
+    CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
+        element_count = ceil2mult(element_count, 8);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count(chunk_length) * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
+
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
+        CUDA_TRY(
+            cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count(chunk_length)));
+        launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count(chunk_length));
+
+        times.proc = launch_3pass_proc_true<T, true>(
+            id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_input, d_output, d_mask, id->d_pss2, true, id->d_popc, chunk_length,
+            element_count);
+    });
+    return times;
+}
+
 template <typename T>
 bool validate(intermediate_data* id, T* d_validation, T* d_output, uint64_t out_length, bool report_failures, uint64_t* failure_count = NULL)
 {
