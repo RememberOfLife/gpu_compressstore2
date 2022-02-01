@@ -50,7 +50,6 @@ std::ostream& operator<<(std::ostream& os, timings t)
     os << t.popc << ";" << t.pss1 << ";" << t.pss2 << ";" << t.proc << ";" << t.total;
     return os;
 }
-
 struct intermediate_data {
     uint32_t* d_pss;
     uint32_t* d_pss2;
@@ -69,7 +68,7 @@ struct intermediate_data {
     cudaEvent_t stop;
     cudaStream_t* streams;
     cudaEvent_t* stream_events;
-    intermediate_data(size_t element_count, int chunk_length_min, int max_stream_count)
+    template <typename T> intermediate_data(size_t element_count, int chunk_length_min, int max_stream_count, T* data_type_dummy)
     {
         this->chunk_length_min = chunk_length_min;
         this->element_count = element_count;
@@ -82,11 +81,11 @@ struct intermediate_data {
             intermediate_size_3pass = ceildiv(element_count + 1, 32) * sizeof(uint32_t);
         }
         size_t temp_storage_bytes_pss;
-        CUDA_TRY(cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_pss, null, null, chunk_count_max));
+        CUDA_TRY(cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_pss, (T*)null, (T*)null, chunk_count_max));
         size_t temp_storage_bytes_flagged;
-        cub::DeviceSelect::Flagged(null, temp_storage_bytes_flagged, null, null, null, null, element_count);
+        cub::DeviceSelect::Flagged(null, temp_storage_bytes_flagged, (T*)null, null, (T*)null, null, element_count);
         size_t temp_storage_bytes_exclusive_sum;
-        cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_exclusive_sum, null, null, chunk_count_max);
+        cub::DeviceScan::ExclusiveSum(null, temp_storage_bytes_exclusive_sum, (T*)null, (T*)null, chunk_count_max);
         cub_intermediate_size = std::max({temp_storage_bytes_pss, temp_storage_bytes_flagged, temp_storage_bytes_exclusive_sum});
         CUDA_TRY(cudaMalloc(&d_cub_intermediate, cub_intermediate_size));
         CUDA_TRY(cudaMalloc(&d_pss, intermediate_size_3pass));

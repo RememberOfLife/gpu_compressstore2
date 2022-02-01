@@ -135,10 +135,15 @@ __global__ void kernel_check_validation(T* d_validation, T* d_data, uint64_t cou
             if (d[j] != v[j]) {
                 if (report_failures) {
                     if constexpr (std::is_integral<T>::value) {
-                        printf("failure: index: %lu: expected: %lu, got: %lu\n", i, (size_t)d_validation[i], (size_t)d_data[i]);
+                        printf("failure: index: %lu: expected: %lx, got: %lx\n", i, (size_t)d_validation[i], (size_t)d_data[i]);
                     }
                     else {
-                        printf("failure: index: %lu: expected: %f, got: %f\n", i, d_validation[i], d_data[i]);
+                        if (std::is_same<T, float>::value) {
+                            printf("failure: index: %lu: expected: %x, got: %x\n", i, *(uint32_t*)(&d_validation[i]), *(uint32_t*)(&d_data[i]));
+                        }
+                        else {
+                            printf("failure: index: %lu: expected: %lx, got: %lx\n", i, *(uint64_t*)(&d_validation[i]), *(uint64_t*)(&d_data[i]));
+                        }
                     }
                 }
                 failures++;

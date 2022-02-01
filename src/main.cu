@@ -21,7 +21,7 @@
 #include "kernels/data_generator.cuh"
 #include <unistd.h>
 
-typedef float input_data_type;
+typedef uint64_t input_data_type;
 static float threshold = 200;
 bool predicate_function(input_data_type f)
 {
@@ -221,7 +221,7 @@ int main(int argc, char** argv)
     fprintf(stderr, "starting benchmark\n");
 
     // prepare candidates for benchmark
-    intermediate_data id{col.size(), chunk_length_min, 8}; // setup shared intermediate data
+    intermediate_data id{col.size(), chunk_length_min, 8, (input_data_type*)NULL}; // setup shared intermediate data
 
     std::vector<std::pair<std::string, std::function<timings(int, int, int)>>> benchs;
 
@@ -262,12 +262,13 @@ int main(int argc, char** argv)
                 std::vector<timings> timings(benchs.size());
                 for (int it = 0; it < iterations; it++) {
                     for (size_t i = 0; i < benchs.size(); i++) {
+                        cudaMemset(d_output, 0xFF, col.size() * 4);
                         timings[i] += benchs[i].second(chunk_length, block_size, grid_size);
                         size_t failure_count;
                         if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {
                             fprintf(
-                                stderr, "validation failure in bench %s (%d, %d), run %i: %zu failures\n", benchs[i].first.c_str(), block_size,
-                                grid_size, it, failure_count);
+                                stderr, "validation failure in bench %s (%d, %d, %d), run %i: %zu failures\n", benchs[i].first.c_str(), chunk_length,
+                                block_size, grid_size, it, failure_count);
                             // exit(EXIT_FAILURE);
                         }
                     }
