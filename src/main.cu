@@ -21,8 +21,8 @@
 #include "kernels/data_generator.cuh"
 #include <unistd.h>
 
-typedef double input_data_type;
-static input_data_type threshold = 200;
+typedef uint64_t input_data_type;
+static float threshold = 200;
 bool predicate_function(input_data_type f)
 {
     return f > threshold;
@@ -44,7 +44,7 @@ int main(int argc, char** argv)
     bool use_uniform = false;
     bool use_zipf = false;
     int option;
-    while ((option = getopt(argc, argv, ":d:l:i:f:p:s:t:rzu:g:m")) != -1) {
+    while ((option = getopt(argc, argv, ":zurd:l:i:f:p:s:t:g:m:")) != -1) {
         switch (option) {
             case 'g': {
                 int grid_size_max = atoi(optarg);
