@@ -13,13 +13,9 @@ struct timings {
     float pss2;
     float proc;
     float total;
-    timings():
-        popc(-1),
-        pss1(-1),
-        pss2(-1),
-        proc(-1),
-        total(-1)
-    {}
+    timings() : popc(-1), pss1(-1), pss2(-1), proc(-1), total(-1)
+    {
+    }
     static float add_timings(float t1, float t2)
     {
         if (t1 < 0) {
@@ -160,7 +156,8 @@ timings bench1_base_variant(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
         times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
         times.proc = launch_3pass_proc_none(
@@ -178,7 +175,8 @@ timings bench2_base_variant_skipping(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
         times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
         times.proc = launch_3pass_proc_none(
@@ -296,7 +294,8 @@ timings bench4_3pass_optimized_read_non_skipping_cub_pss(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_pss, chunk_length, element_count);
 
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
         CUDA_TRY(cub::DeviceScan::ExclusiveSum(id->d_cub_intermediate, id->cub_intermediate_size, id->d_pss, id->d_pss2, id->chunk_count));
@@ -317,7 +316,8 @@ timings bench5_3pass_optimized_read_skipping_partial_pss(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
         times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         times.proc = launch_3pass_proc_true(
@@ -335,7 +335,8 @@ timings bench6_3pass_optimized_read_skipping_two_phase_pss(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
         times.pss1 = launch_3pass_pss_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->chunk_count, id->d_out_count);
         times.pss2 = launch_3pass_pss2_gmem(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, id->d_pss, id->d_pss2, id->chunk_count);
@@ -354,7 +355,8 @@ timings bench7_3pass_optimized_read_skipping_cub_pss(
     timings times{};
     CUDA_TIME_FORCE_ENABLED(id->start, id->stop, 0, &times.total, {
         element_count = ceil2mult(element_count, 8);
-        times.popc = launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
+        times.popc =
+            launch_3pass_popc_none(id->dummy_event_1, id->dummy_event_2, grid_size, block_size, d_mask, id->d_popc, chunk_length, element_count);
         cudaMemcpy(id->d_pss, id->d_popc, id->chunk_count * sizeof(uint32_t), cudaMemcpyDeviceToDevice);
 
         launch_3pass_pssskip(0, id->d_pss, id->d_out_count, id->chunk_count);
@@ -402,7 +404,8 @@ timings bench9_pattern(
     return times;
 }
 
-bool validate(intermediate_data* id, float* d_validation, float* d_output, uint64_t out_length, bool report_failures, uint64_t* failure_count = NULL)
+template <typename T>
+bool validate(intermediate_data* id, T* d_validation, T* d_output, uint64_t out_length, bool report_failures, uint64_t* failure_count = NULL)
 {
     val_to_gpu(id->d_failure_count, 0);
     kernel_check_validation<<<64, 32>>>(d_validation, d_output, out_length, id->d_failure_count, report_failures);

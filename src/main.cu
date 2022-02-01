@@ -21,8 +21,9 @@
 #include "kernels/data_generator.cuh"
 #include <unistd.h>
 
-static float threshold = 200;
-bool predicate_function(float f)
+typedef double input_data_type;
+static input_data_type threshold = 200;
+bool predicate_function(input_data_type f)
 {
     return f > threshold;
 }
@@ -133,7 +134,7 @@ int main(int argc, char** argv)
         ss << pattern_bitset;
         std::cout << "pattern: " << ss.str().substr(0, pattern_length) << "\n";
     }
-    std::vector<float> col;
+    std::vector<input_data_type> col;
     if (!use_csv) {
         fprintf(stderr, "generating %i lines of input\n", lines);
         col.resize(lines);
@@ -146,8 +147,8 @@ int main(int argc, char** argv)
             col.resize(std::min(col.size(), static_cast<size_t>(lines)));
         }
     }
-    float* d_input = vector_to_gpu(col);
-    float* d_output = alloc_gpu<float>(col.size() + 1);
+    input_data_type* d_input = vector_to_gpu(col);
+    input_data_type* d_output = alloc_gpu<input_data_type>(col.size() + 1);
 
     // gen predicate mask
     size_t one_count = 0;
@@ -181,10 +182,10 @@ int main(int argc, char** argv)
     fprintf(stderr, "line count: %zu, one count: %zu, percentage: %f\n", col.size(), one_count, (double)one_count / col.size());
 
     // gen cpu side validation
-    std::vector<float> validation;
+    std::vector<input_data_type> validation;
     validation.resize(col.size());
     size_t out_length = generate_validation(&col[0], &pred[0], &validation[0], col.size());
-    float* d_validation = vector_to_gpu(validation);
+    input_data_type* d_validation = vector_to_gpu(validation);
 
     fprintf(stderr, "starting benchmark");
 
@@ -193,11 +194,14 @@ int main(int argc, char** argv)
 
     std::vector<std::pair<std::string, std::function<timings(int, int)>>> benchs;
 
-    benchs.emplace_back("bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
     benchs.emplace_back(
-        "bench2_base_variant_skipping", [&](int bs, int gs) { return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+        "bench1_base_variant", [&](int bs, int gs) { return bench1_base_variant(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    benchs.emplace_back("bench2_base_variant_skipping", [&](int bs, int gs) {
+        return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
     // benchs.emplace_back(
-    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs); });
+    //     "bench3_3pass_streaming", [&](int bs, int gs) { return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    //     });
     benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int bs, int gs) {
         return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
     });
@@ -213,8 +217,9 @@ int main(int argc, char** argv)
     benchs.emplace_back("bench8_cub_flagged", [&](int bs, int gs) { return bench8_cub_flagged(&id, d_input, d_mask, d_output, col.size()); });
 
     if (use_pattern_mask) {
-        benchs.emplace_back(
-            "bench9_pattern", [&](int bs, int gs) { return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, bs, gs); });
+        benchs.emplace_back("bench9_pattern", [&](int bs, int gs) {
+            return bench9_pattern(&id, d_input, pattern, pattern_length, d_output, col.size(), 1024, bs, gs);
+        });
     }
 
     std::cout << "benchmark;block_size;grid_size;time_popc;time_pss1;time_pss2;time_proc;time_total" << std::endl;
@@ -227,13 +232,16 @@ int main(int argc, char** argv)
                     timings[i] += benchs[i].second(block_size, grid_size);
                     size_t failure_count;
                     if (!validate(&id, d_validation, d_output, out_length, report_failures, &failure_count)) {
-                        fprintf(stderr, "validation failure in bench %s (%d, %d), run %i: %zu failures\n", benchs[i].first.c_str(), block_size, grid_size, it, failure_count);
+                        fprintf(
+                            stderr, "validation failure in bench %s (%d, %d), run %i: %zu failures\n", benchs[i].first.c_str(), block_size, grid_size,
+                            it, failure_count);
                         // exit(EXIT_FAILURE);
                     }
                 }
             }
             for (int i = 0; i < benchs.size(); i++) {
-                std::cout << benchs[i].first << ";" << block_size << ";" << grid_size << ";" << timings[i]/static_cast<float>(iterations) << std::endl;
+                std::cout << benchs[i].first << ";" << block_size << ";" << grid_size << ";" << timings[i] / static_cast<float>(iterations)
+                          << std::endl;
             }
         }
     }

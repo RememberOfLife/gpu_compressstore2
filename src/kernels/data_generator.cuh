@@ -133,7 +133,14 @@ __global__ void kernel_check_validation(T* d_validation, T* d_data, uint64_t cou
         memcpy(&v, (void*)&d_validation[i], sizeof(T));
         for (int j = 0; j < sizeof(T); j++) {
             if (d[j] != v[j]) {
-                if (report_failures) printf("failure: index: %lu: expected: %f, got: %f\n", i, d_validation[i], d_data[i]);
+                if (report_failures) {
+                    if constexpr (std::is_integral<T>::value) {
+                        printf("failure: index: %lu: expected: %lu, got: %lu\n", i, (size_t)d_validation[i], (size_t)d_data[i]);
+                    }
+                    else {
+                        printf("failure: index: %lu: expected: %f, got: %f\n", i, d_validation[i], d_data[i]);
+                    }
+                }
                 failures++;
                 break;
             }
