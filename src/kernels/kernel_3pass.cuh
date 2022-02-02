@@ -280,18 +280,11 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
     uint32_t warp_offset = threadIdx.x % CUDA_WARP_SIZE;
     uint32_t warp_index = threadIdx.x / CUDA_WARP_SIZE;
     uint32_t base_idx = blockIdx.x * grid_stride + warp_index * warp_stride;
-    if (base_idx >= element_count) {
-        return;
-    }
+    if (base_idx >= element_count) return;
     uint32_t stride = 1024;
     if (warp_offset == 0) {
         if (complete_pss) {
-            if (base_idx / chunk_length < chunk_count) {
-                smem_out_idx[warp_index] = pss[base_idx / chunk_length];
-            }
-            else {
-                return;
-            }
+            smem_out_idx[warp_index] = pss[base_idx / chunk_length];
         }
         else {
             smem_out_idx[warp_index] = d_3pass_pproc_pssidx(base_idx / chunk_length, pss, chunk_count_p2);
@@ -303,9 +296,26 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
     }
     for (uint32_t tid = base_idx + warp_offset; tid < stop_idx; tid += stride) {
         // check chunk popcount at base_idx for potential skipped
-        if (popc && popc[base_idx / stride] == 0) {
-            base_idx += stride;
-            continue;
+        if (popc) {
+            if (chunk_length >= stride) {
+                if (popc[base_idx / chunk_length] == 0) {
+                    base_idx += chunk_length;
+                    continue;
+                }
+            }
+            else {
+                bool empty_stride = true;
+                for (uint32_t cid = base_idx / chunk_length; cid < (base_idx + stride) / chunk_length; cid++) {
+                    if (popc[cid] != 0) {
+                        empty_stride = false;
+                        break;
+                    }
+                }
+                if (empty_stride) {
+                    base_idx += stride;
+                    continue;
+                }
+            }
         }
         uint32_t mask_idx = base_idx / 8 + warp_offset * 4;
         if (mask_idx < mask_byte_count) {
