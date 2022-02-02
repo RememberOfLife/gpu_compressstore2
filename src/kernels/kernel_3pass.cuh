@@ -295,7 +295,7 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
     if (stop_idx > chunk_length * chunk_count) {
         stop_idx = chunk_length * chunk_count;
     }
-    for (uint32_t tid = base_idx + warp_offset; tid < stop_idx; tid += stride) {
+    while (base_idx < stop_idx) {
         // check chunk popcount at base_idx for potential skipped
         if (popc) {
             if (chunk_length >= stride) {
@@ -338,11 +338,11 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
             smem[threadIdx.x] = 0;
         }
         __syncwarp();
+        uint32_t input_index = base_idx + warp_offset;
         for (int i = 0; i < CUDA_WARP_SIZE; i++) {
             uint32_t s = smem[threadIdx.x - warp_offset + i];
             uint32_t out_idx_me = __popc(s >> (CUDA_WARP_SIZE - warp_offset));
             bool v = (s >> ((CUDA_WARP_SIZE - 1) - warp_offset)) & 0b1;
-            uint32_t input_index = tid + (i * CUDA_WARP_SIZE);
             if (v && input_index < element_count) {
                 uint32_t out_idx = smem_out_idx[warp_index] + out_idx_me;
                 output[out_idx] = input[input_index];
@@ -352,6 +352,7 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
                 smem_out_idx[warp_index] += out_idx_me + v;
             }
             __syncwarp();
+            input_index += CUDA_WARP_SIZE;
         }
         base_idx += stride;
     }
