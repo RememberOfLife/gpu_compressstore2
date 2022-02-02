@@ -273,7 +273,8 @@ __device__ void kernel_3pass_proc_true_striding_naive_writeout(
         warp_remainder = 1;
     }
     uint32_t grid_stride = chunk_length * warp_remainder;
-    while (grid_stride % (CUDA_WARP_SIZE * BLOCK_DIM) != 0 || grid_stride * gridDim.x < element_count) {
+    while (grid_stride % (CUDA_WARP_SIZE * BLOCK_DIM) != 0 || grid_stride * gridDim.x < element_count ||
+           grid_stride / WARPS_PER_BLOCK < chunk_length) {
         grid_stride *= 2;
     }
     uint32_t warp_stride = grid_stride / WARPS_PER_BLOCK;
