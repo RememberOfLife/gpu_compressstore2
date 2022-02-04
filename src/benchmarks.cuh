@@ -281,7 +281,7 @@ timings bench3_3pass_streaming(
             // launch optimized writeout proc for i using  d->out_count at i as
             // offset from output
 
-            switch_3pass_proc_true_striding<T, true>(
+            switch_3pass_proc_true_striding<T, true, true>(
                 proc_blockcount, proc_threadcount, id->streams[i], d_input + elements_per_stream * i, d_output, d_mask + mask_bytes_per_stream * i,
                 id->d_pss + chunks_per_stream * i, id->d_popc + skip_blocks_per_stream * i, chunk_length, elements_to_process, chunk_count_p2,
                 id->d_out_count + i);
