@@ -46,8 +46,9 @@ int main(int argc, char** argv)
     float selectivity = 0.5;
     bool use_uniform = false;
     bool use_zipf = false;
+    bool use_clustering = false;
     int option;
-    while ((option = getopt(argc, argv, ":zurd:l:i:f:p:s:t:g:m:c:k:b:n:")) != -1) {
+    while ((option = getopt(argc, argv, ":zuerd:l:i:f:p:s:t:g:m:c:k:b:n:")) != -1) {
         switch (option) {
             case 'g': {
                 grid_size_max = atoi(optarg);
@@ -131,6 +132,10 @@ int main(int argc, char** argv)
                 fprintf(stderr, "using uniform mask\n");
                 use_uniform = true;
             } break;
+            case 'e': {
+                fprintf(stderr, "using clustEring mask\n");
+                use_clustering = true;
+            } break;
             case ':': {
                 fprintf(stderr, "-%c needs a value\n", optopt);
                 exit(-1);
@@ -141,10 +146,10 @@ int main(int argc, char** argv)
             } break;
         }
     }
-    if (use_zipf || use_uniform || use_csv) {
+    if (use_zipf || use_uniform || use_csv || use_clustering) {
         use_pattern_mask = false;
     }
-    if (use_zipf + use_uniform + use_csv + use_pattern_mask != 1) {
+    if (use_zipf + use_uniform + use_csv + use_pattern_mask + use_clustering != 1) {
         error("can only use one mask type\n");
     }
     if (use_pattern_mask) {
@@ -195,6 +200,9 @@ int main(int argc, char** argv)
         pred.resize(ceildiv(col.size(), 8));
         generate_mask_zipf(&pred[0], pred.size(), 0, pred.size(), &one_count);
     }
+    if (use_clustering) {
+        pred = generate_mask_clustering(selectivity, 1, ceil2mult(col.size(), 8), &one_count);
+    }
     if (use_pattern_mask) {
         pred.resize(ceildiv(col.size(), 8));
         // mask from pattern instead
@@ -202,7 +210,6 @@ int main(int argc, char** argv)
     }
     // make sure unused bits in bitmask are 0
     int unused_bits = overlap(col.size(), 8);
-
     if (unused_bits) {
         one_count -= std::popcount(((uint32_t)pred.back() << (8 - unused_bits)) & 0xFF);
         pred.back() >>= unused_bits;

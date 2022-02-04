@@ -1,6 +1,8 @@
 #ifndef DATA_GENERATOR_CUH
 #define DATA_GENERATOR_CUH
 
+#include <vector>
+
 #include <cstdint>
 #include <stdio.h>
 
@@ -123,6 +125,45 @@ void generate_mask_pattern(
         }
         h_buffer[i] = acc;
     }
+}
+
+std::vector<uint8_t> generate_mask_clustering(float selectivity, size_t cluster_count, size_t total_elements, size_t* out_count = NULL)
+{
+    std::vector<bool> bitset;
+    bitset.resize(total_elements);
+    size_t total_set_one = selectivity * total_elements;
+    size_t cluster_size = total_set_one / cluster_count;
+    size_t slice = bitset.size() / cluster_count;
+    // start by setting all to zero
+    for (int i = 0; i < bitset.size(); i++) {
+        bitset[i] = 0;
+    }
+    for (int i = 0; i < cluster_count; i++) {
+        for (int k = 0; k < cluster_size; k++) {
+            size_t cluster_offset = i * slice;
+            bitset[k + cluster_offset] = 1;
+        }
+    }
+    std::vector<uint8_t> final_bitmask_cpu;
+    final_bitmask_cpu.resize(total_elements / 8);
+    for (int i = 0; i < total_elements / 8; i++) {
+        final_bitmask_cpu[i] = 0;
+    }
+    for (int i = 0; i < bitset.size(); i++) {
+        // set bit of uint8
+        if (bitset[i]) {
+            if (out_count) {
+                (*out_count)++;
+            }
+            uint8_t current = final_bitmask_cpu[i / 8];
+            int location = i % 8;
+            current = 1 << (7 - location);
+            uint8_t add_res = final_bitmask_cpu[i / 8];
+            add_res = add_res | current;
+            final_bitmask_cpu[i / 8] = add_res;
+        }
+    }
+    return final_bitmask_cpu;
 }
 
 // count: number of bits in the mask
