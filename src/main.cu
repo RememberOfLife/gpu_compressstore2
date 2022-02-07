@@ -138,9 +138,9 @@ template <typename input_data_type> void bench(opts o)
     benchs.emplace_back("bench2_base_variant_skipping", [&](int cs, int bs, int gs) {
         return bench2_base_variant_skipping(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });
-    // benchs.emplace_back("bench3_3pass_streaming", [&](int cs, int bs, int gs) {
-    //     return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
-    // });
+    benchs.emplace_back("bench3_3pass_streaming", [&](int cs, int bs, int gs) {
+        return bench3_3pass_streaming(&id, d_input, d_mask, d_output, col.size(), 1024, bs, gs);
+    });
     benchs.emplace_back("bench4_3pass_optimized_read_non_skipping_cub_pss", [&](int cs, int bs, int gs) {
         return bench4_3pass_optimized_read_non_skipping_cub_pss(&id, d_input, d_mask, d_output, col.size(), cs, bs, gs);
     });

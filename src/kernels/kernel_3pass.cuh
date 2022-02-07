@@ -8,30 +8,6 @@
 #include "cuda_time.cuh"
 
 #define CUDA_WARP_SIZE 32
-__global__ void kernel_3pass_popc_none_monolithic(uint8_t* mask, uint32_t* pss, uint32_t chunk_length32, uint32_t element_count)
-{
-    size_t tid = (blockIdx.x * blockDim.x) + threadIdx.x; // thread index = chunk id
-    size_t idx = chunk_length32 * 4 * tid; // index for 1st 8bit-element of this chunk
-    size_t bit_idx = idx * 8;
-    if (bit_idx > element_count) return;
-    // assuming chunk_length to be multiple of 32
-    size_t remaining_bytes_for_grid = (element_count - bit_idx) / 8;
-    size_t bytes_to_process = chunk_length32 * 4;
-    if (remaining_bytes_for_grid < bytes_to_process) {
-        bytes_to_process = remaining_bytes_for_grid;
-    }
-    size_t popcount = 0;
-    int i = 0;
-    for (; i < bytes_to_process / 4 * 4; i += 4) {
-        popcount += __popc(*reinterpret_cast<uint32_t*>(mask + idx + i));
-    }
-    if (i < bytes_to_process / 2 * 2) {
-        popcount += __popc(*reinterpret_cast<uint16_t*>(mask + idx + i));
-        i += 2;
-    }
-    if (i < bytes_to_process) popcount += __popc(*reinterpret_cast<uint8_t*>(mask + idx + i));
-    pss[tid] = popcount;
-}
 
 __global__ void kernel_3pass_popc_none_striding(uint8_t* mask, uint32_t* pss, uint32_t chunk_length32, uint32_t element_count)
 {
@@ -74,17 +50,9 @@ float launch_3pass_popc_none(
     uint32_t chunk_count = ceildiv(element_count, chunk_length);
     float time = 0;
     uint32_t chunk_length32 = chunk_length / 32;
-    if (blockcount == 0) {
-        blockcount = (chunk_count / threadcount) + 1;
-        CUDA_TIME(
-            ce_start, ce_stop, 0, &time,
-            (kernel_3pass_popc_none_monolithic<<<blockcount, threadcount>>>(d_mask, d_pss, chunk_length32, element_count)));
-    }
-    else {
-        CUDA_TIME(
-            ce_start, ce_stop, 0, &time,
-            (kernel_3pass_popc_none_striding<<<blockcount, threadcount>>>(d_mask, d_pss, chunk_length32, element_count)));
-    }
+    assert(blockcount);
+    CUDA_TIME(
+        ce_start, ce_stop, 0, &time, (kernel_3pass_popc_none_striding<<<blockcount, threadcount>>>(d_mask, d_pss, chunk_length32, element_count)));
     return time;
 }
 

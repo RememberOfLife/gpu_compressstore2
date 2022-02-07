@@ -260,7 +260,7 @@ timings bench3_3pass_streaming(
             uint64_t chunks_to_process = ls ? chunks_for_last_stream : chunks_per_stream;
             uint64_t elements_to_process = ls ? elements_for_last_stream : elements_per_stream;
             // launch popc for i
-            kernel_3pass_popc_none_monolithic<<<popc1_blockcount, popc1_threadcount, 0, id->streams[i]>>>(
+            kernel_3pass_popc_none_striding<<<popc1_blockcount, popc1_threadcount, 0, id->streams[i]>>>(
                 d_mask + mask_bytes_per_stream * i, id->d_pss + chunks_per_stream * i, chunk_length32, elements_to_process);
             // launch pss for i
             // TODO these temporary storage allocations are timed
@@ -272,7 +272,7 @@ timings bench3_3pass_streaming(
             // record event i
             CUDA_TRY(cudaEventRecord(id->stream_events[i], id->streams[i]));
             // launch optimization popc 1024 for i
-            kernel_3pass_popc_none_monolithic<<<popc2_blockcount, popc2_threadcount, 0, id->streams[i]>>>(
+            kernel_3pass_popc_none_striding<<<popc2_blockcount, popc2_threadcount, 0, id->streams[i]>>>(
                 d_mask + mask_bytes_per_stream * i, id->d_popc + skip_blocks_per_stream * i, skip_block_size / 32, elements_to_process);
             // if i > 0: wait for event i-1
             if (i > 0) {
